@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { IconUser } from '@tabler/icons-react'
+import { PlusIcon } from 'lucide-react'
 
 const NAV_GROUPS = [
-  ['Home', 'Execute', 'R&D'],
-  ['Vision', 'Features'],
+  ['Home', 'Execute', 'Explore', 'Product'],
   ['Backlog', 'All'],
 ]
 
@@ -37,6 +37,9 @@ export function Navbar({ active, onSelect }: NavbarProps) {
             ))}
           </div>
         ))}
+        <Button variant="outline" size="icon">
+          <PlusIcon />
+        </Button>
       </div>
 
       {/* Right side */}
@@ -44,7 +47,7 @@ export function Navbar({ active, onSelect }: NavbarProps) {
         <button className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
           Notes
         </button>
-        <Button variant="outline" size="sm">
+        <Button variant="outline">
           <IconUser /> Project Name
         </Button>
       </div>

@@ -1,7 +1,9 @@
+import { FocusCard } from '@/components/FocusCard'
+
 export function Home() {
   return (
-    <div className="flex-1 flex items-center justify-center">
-      <span className="text-2xl font-medium text-muted-foreground">Home</span>
+    <div className="flex-1 p-6">
+      <FocusCard />
     </div>
   )
 }

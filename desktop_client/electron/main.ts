@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { registerLocalStorageAPI } from './ipc/localStorageAPI'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -26,6 +27,11 @@ function createWindow() {
   }
 }
 
+app.whenReady().then(() => {
+  registerLocalStorageAPI()
+  createWindow()
+})
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
   win = null
@@ -34,5 +40,3 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
-
-app.whenReady().then(createWindow)

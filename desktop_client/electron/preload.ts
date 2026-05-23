@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  ping: () => ipcRenderer.invoke('ping'),
+contextBridge.exposeInMainWorld('db', {
+  query: (request: { action: string; payload?: unknown }) =>
+    ipcRenderer.invoke('db:query', request),
 })
