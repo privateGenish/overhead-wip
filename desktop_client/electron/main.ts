@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerLocalStorageAPI } from './ipc/localStorageAPI'
+import { initSqlite } from './db/sqlite'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -17,6 +18,7 @@ function createWindow() {
     height: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      sandbox: false,
     },
   })
 
@@ -28,6 +30,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initSqlite(path.join(app.getPath('userData'), 'overhead.db'))
   registerLocalStorageAPI()
   createWindow()
 })

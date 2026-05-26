@@ -36,8 +36,10 @@ export class ExecuteTicket extends Ticket {
   static async create(title: string): Promise<ExecuteTicket> {
     const uuid = await Ticket.generateUuid()
     const id = await Ticket.generateId()
-    return Ticket.construct(
+    const ticket = Ticket.construct(
       () => new ExecuteTicket(uuid, id, title, { value: 'Draft' }),
     )
+    await Ticket.persist(ticket)
+    return ticket
   }
 }

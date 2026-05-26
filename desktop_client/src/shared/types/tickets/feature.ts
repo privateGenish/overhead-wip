@@ -36,8 +36,10 @@ export class FeatureTicket extends Ticket {
   static async create(title: string): Promise<FeatureTicket> {
     const uuid = await Ticket.generateUuid()
     const id = await Ticket.generateId()
-    return Ticket.construct(
+    const ticket = Ticket.construct(
       () => new FeatureTicket(uuid, id, title, { value: 'Idea' }),
     )
+    await Ticket.persist(ticket)
+    return ticket
   }
 }

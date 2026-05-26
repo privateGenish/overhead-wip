@@ -1,0 +1,21 @@
+{
+  "entryPoints": [
+    "src/shared/types/index.ts",
+    "src/lib/ticketStore.ts",
+    "src/lib/dbClientForRenderer.ts",
+    "src/types/electron.d.ts",
+    "electron/db/sqlite.ts",
+    "electron/ipc/batch.ts",
+    "electron/ipc/localStorageAPI.ts"
+  ],
+  "out": "docs/api",
+  "name": "Overhead",
+  "readme": "docs/ARCHITECTURE.md",
+  "navigationLinks": {
+    "Architecture": "docs/ARCHITECTURE.md"
+  },
+  "disableSources": true,
+  "skipErrorChecking": true,
+  "excludePrivate": false,
+  "excludeInternal": false
+}

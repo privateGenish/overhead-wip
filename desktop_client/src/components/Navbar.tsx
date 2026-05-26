@@ -1,6 +1,12 @@
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { IconUser } from '@tabler/icons-react'
-import { PlusIcon } from 'lucide-react'
+import { PlusIcon, Settings } from 'lucide-react'
 
 const NAV_GROUPS = [
   ['Home', 'Execute', 'Explore', 'Product'],
@@ -47,9 +53,19 @@ export function Navbar({ active, onSelect }: NavbarProps) {
         <button className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
           Notes
         </button>
-        <Button variant="outline">
-          <IconUser /> Project Name
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline">
+              <IconUser /> Project Name
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => onSelect('Settings')}>
+              <Settings className="h-4 w-4" />
+              Settings
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   )
