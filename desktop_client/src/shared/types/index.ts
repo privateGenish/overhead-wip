@@ -1,4 +1,5 @@
 export * from './ticket'
+export * from './ticketOptions'
 export * from './tickets/execute'
 export * from './tickets/explore'
 export * from './tickets/feature'

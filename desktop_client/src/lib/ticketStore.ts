@@ -6,6 +6,7 @@ import {
   FeatureTicket,
 } from '@/shared/types'
 import type { TicketType } from '@/shared/types'
+import { statusForType } from '@/shared/types'
 import { loadTickets } from './tickets'
 import { ticketClient } from './ticketClient'
 import { generalClient } from './generalClient'
@@ -88,12 +89,36 @@ export class TicketStore {
     return this.#tickets.find((t) => t.uuid === uuid)
   }
 
+  #replaceTicket(existing: Ticket, replacement: Ticket): void {
+    this.#untrack(existing)
+    this.#tickets = this.#tickets.map((ticket) => (
+      ticket === existing ? replacement : ticket
+    ))
+    this.#track(replacement)
+    this.#notify()
+  }
+
   async create(type: TicketType, title: string): Promise<Ticket> {
     const ticket = await factories[type].create(title)
     this.#track(ticket)
     this.#tickets = [...this.#tickets, ticket]
     this.#notify()
     return ticket
+  }
+
+  async setTicketType(ticket: Ticket, type: TicketType): Promise<Ticket> {
+    if (ticket.type === type) return ticket
+
+    const data = {
+      ...ticket.toJSON(),
+      type,
+      status: statusForType(type, ticket.status),
+    }
+    await ticketClient.upsert(data)
+
+    const replacement = Ticket.load(data)
+    this.#replaceTicket(ticket, replacement)
+    return replacement
   }
 
   async syncFromStorage(uuid: string): Promise<void> {
@@ -110,15 +135,12 @@ export class TicketStore {
 
     const synced = Ticket.load(data)
     if (existing) {
-      this.#untrack(existing)
-      this.#tickets = this.#tickets.map((ticket) => (
-        ticket === existing ? synced : ticket
-      ))
+      this.#replaceTicket(existing, synced)
     } else {
       this.#tickets = [...this.#tickets, synced]
+      this.#track(synced)
+      this.#notify()
     }
-    this.#track(synced)
-    this.#notify()
   }
 
   async deleteAll(): Promise<void> {

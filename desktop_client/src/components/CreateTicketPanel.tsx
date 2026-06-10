@@ -10,11 +10,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ticketStore } from '@/lib/ticketStore'
-import type { TicketType } from '@/shared/types'
+import { TICKET_TYPES, type TicketType } from '@/shared/types'
 import { Maximize2, X } from 'lucide-react'
 import './ticket-editor.css'
-
-const TICKET_TYPES: TicketType[] = ['Execute', 'Explore', 'Feature']
 
 const extensions = [
   StarterKit,

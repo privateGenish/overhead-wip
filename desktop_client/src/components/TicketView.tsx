@@ -34,7 +34,16 @@ export function TicketView({ filter, fixedType }: TicketViewProps) {
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
       <CreateTicketPanel fixedType={fixedType} />
-      <DataTable columns={columns} data={data} onOpenTicket={setSelectedUuid} />
+      <DataTable
+        columns={columns}
+        data={data}
+        defaultColumnFilters={fixedType ? [
+          { id: 'backlog', value: ['false'] },
+        ] : []}
+        hideTypeFilter={Boolean(fixedType)}
+        showBacklogFilter={Boolean(fixedType)}
+        onOpenTicket={setSelectedUuid}
+      />
     </div>
   )
 }

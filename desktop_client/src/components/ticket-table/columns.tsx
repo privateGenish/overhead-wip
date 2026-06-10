@@ -90,7 +90,7 @@ export const columns: ColumnDef<TicketRow>[] = [
         {row.getValue('backlog') ? 'Backlog' : '—'}
       </Badge>
     ),
-    filterFn: (row, id, value) => value.includes(row.getValue(id)),
+    filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
   },
   {
     id: 'actions',

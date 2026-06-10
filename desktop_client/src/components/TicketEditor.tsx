@@ -4,6 +4,7 @@ import { Markdown } from 'tiptap-markdown'
 import { Archive, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTicket } from '@/lib/ticketStore'
+import { TicketControlBar } from '@/components/TicketControlBar'
 import { TicketHistory } from '@/components/TicketHistory'
 import type { Ticket } from '@/shared/types'
 import './ticket-editor.css'
@@ -17,6 +18,7 @@ const extensions = [
 
 interface TicketEditorProps {
   ticket: Ticket
+  onArchived?: () => void
 }
 
 /**
@@ -24,7 +26,7 @@ interface TicketEditorProps {
  * Edit / View toggle. Edits are saved to the store on every change; the
  * ticket's `description` holds markdown.
  */
-export function TicketEditor({ ticket }: TicketEditorProps) {
+export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
   const [editing, setEditing] = useState(false) // default: View (read-only)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [editorKey, setEditorKey] = useState(0)
@@ -84,6 +86,8 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
         </div>
       </header>
 
+      <TicketControlBar ticket={ticket} />
+
       <div className="flex-1 overflow-y-auto px-6 py-4">
         <EditorRoot>
           <EditorContent
@@ -108,13 +112,16 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
         </EditorRoot>
       </div>
 
-      {/* Floating archive button — bottom-left corner */}
+      {/* Floating archive button — bottom-right corner */}
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => ticket.setArchived(true)}
+        onClick={() => {
+          ticket.setArchived(true)
+          onArchived?.()
+        }}
         title="Archive ticket"
-        className="absolute bottom-4 left-4 gap-1.5 text-muted-foreground hover:text-foreground"
+        className="absolute right-4 bottom-4 gap-1.5 text-muted-foreground hover:text-foreground"
       >
         <Archive className="size-3.5" />
         Archive

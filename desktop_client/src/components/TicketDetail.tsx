@@ -61,7 +61,7 @@ export function TicketDetail({
       {/* Main panel */}
       <main className="min-w-0 flex-1">
         {ticket ? (
-          <TicketEditor ticket={ticket} />
+          <TicketEditor ticket={ticket} onArchived={onClose} />
         ) : (
           <div className="p-6 text-muted-foreground">Ticket not found.</div>
         )}

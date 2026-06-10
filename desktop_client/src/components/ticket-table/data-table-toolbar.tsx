@@ -2,8 +2,8 @@ import { type Table } from '@tanstack/react-table'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { DataTableFacetedFilter } from './data-table-faceted-filter'
-import { DataTableViewOptions } from './data-table-view-options'
 
 const typeOptions = [
   { label: 'Explore', value: 'Explore' },
@@ -29,10 +29,31 @@ const statusOptions = [
 
 interface DataTableToolbarProps<TData> {
   table: Table<TData>
+  hideTypeFilter?: boolean
+  showBacklogFilter?: boolean
 }
 
-export function DataTableToolbar<TData>({ table }: DataTableToolbarProps<TData>) {
-  const isFiltered = table.getState().columnFilters.length > 0
+export function DataTableToolbar<TData>({
+  table,
+  hideTypeFilter = false,
+  showBacklogFilter = false,
+}: DataTableToolbarProps<TData>) {
+  const columnFilters = table.getState().columnFilters
+  const backlogColumn = table.getColumn('backlog')
+  const backlogFilter = backlogColumn?.getFilterValue() as string[] | undefined
+  const showBacklog = !backlogFilter?.includes('false')
+  const hasDefaultBacklogFilter =
+    showBacklogFilter &&
+    backlogFilter?.length === 1 &&
+    backlogFilter[0] === 'false'
+  const isFiltered =
+    columnFilters.length > 0 &&
+    !(columnFilters.length === 1 && hasDefaultBacklogFilter)
+
+  function resetFilters() {
+    table.resetColumnFilters()
+    if (showBacklogFilter) backlogColumn?.setFilterValue(['false'])
+  }
 
   return (
     <div className="flex items-center justify-between">
@@ -43,19 +64,30 @@ export function DataTableToolbar<TData>({ table }: DataTableToolbarProps<TData>)
           onChange={(e) => table.getColumn('id')?.setFilterValue(e.target.value)}
           className="h-8 w-[150px] lg:w-[250px]"
         />
-        {table.getColumn('type') && (
+        {!hideTypeFilter && table.getColumn('type') && (
           <DataTableFacetedFilter column={table.getColumn('type')} title="Type" options={typeOptions} />
         )}
         {table.getColumn('status') && (
           <DataTableFacetedFilter column={table.getColumn('status')} title="Status" options={statusOptions} />
         )}
         {isFiltered && (
-          <Button variant="ghost" size="sm" onClick={() => table.resetColumnFilters()}>
+          <Button variant="ghost" size="sm" onClick={resetFilters}>
             Reset <X />
           </Button>
         )}
       </div>
-      <DataTableViewOptions table={table} />
+      {showBacklogFilter && backlogColumn && (
+        <label className="ml-4 flex h-8 shrink-0 items-center gap-2 rounded-md border border-dashed px-3 text-sm">
+          <Switch
+            checked={showBacklog}
+            onCheckedChange={(checked) => {
+              backlogColumn.setFilterValue(checked ? undefined : ['false'])
+            }}
+            aria-label="Show backlog tickets"
+          />
+          <span className="text-muted-foreground">Show backlog</span>
+        </label>
+      )}
     </div>
   )
 }

@@ -36,17 +36,25 @@ declare module '@tanstack/react-table' {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
+  defaultColumnFilters?: ColumnFiltersState
+  hideTypeFilter?: boolean
+  showBacklogFilter?: boolean
   onOpenTicket?: (uuid: string) => void
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
+  defaultColumnFilters = [],
+  hideTypeFilter = false,
+  showBacklogFilter = false,
   onOpenTicket,
 }: DataTableProps<TData, TValue>) {
   const [rowSelection, setRowSelection] = React.useState({})
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
+    defaultColumnFilters,
+  )
   const [sorting, setSorting] = React.useState<SortingState>([])
 
   const table = useReactTable({
@@ -70,7 +78,11 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="flex flex-col gap-4">
-      <DataTableToolbar table={table} />
+      <DataTableToolbar
+        table={table}
+        hideTypeFilter={hideTypeFilter}
+        showBacklogFilter={showBacklogFilter}
+      />
       <div className="overflow-hidden rounded-md border">
         <Table>
           <TableHeader>
