@@ -77,7 +77,7 @@ export function DataTableToolbar<TData>({
         )}
       </div>
       {showBacklogFilter && backlogColumn && (
-        <label className="ml-4 flex h-8 shrink-0 items-center gap-2 rounded-md border border-dashed px-3 text-sm">
+        <label className="ml-4 flex h-8 shrink-0 items-center gap-2 rounded-md px-3 text-sm">
           <Switch
             checked={showBacklog}
             onCheckedChange={(checked) => {
