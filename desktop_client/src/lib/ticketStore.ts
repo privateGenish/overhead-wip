@@ -24,6 +24,8 @@ const factories = {
  */
 export class TicketStore {
   #tickets: Ticket[] = []
+  #active: Ticket[] = []    // stable non-archived ref for useSyncExternalStore
+  #archived: Ticket[] = []  // stable archived ref for useSyncExternalStore
   #listeners = new Set<() => void>()
   #unsubscribes = new Map<Ticket, () => void>()
 
@@ -69,7 +71,13 @@ export class TicketStore {
 
   getSnapshot = (): Ticket[] => this.#tickets
 
+  getActiveSnapshot = (): Ticket[] => this.#active
+
+  getArchivedSnapshot = (): Ticket[] => this.#archived
+
   #notify(): void {
+    this.#active = this.#tickets.filter((t) => !t.archived)
+    this.#archived = this.#tickets.filter((t) => t.archived)
     for (const listener of this.#listeners) listener()
   }
 
@@ -90,15 +98,22 @@ export class TicketStore {
     await ticketClient.deleteAll()
     await generalClient.settingDelete('counter')
     this.#tickets = []
+    this.#active = []
+    this.#archived = []
     this.#notify()
   }
 }
 
 export const ticketStore = new TicketStore()
 
-/** Binds React to the ticket list — re-renders on add/remove and any ticket change. */
+/** Binds React to the active (non-archived) ticket list. */
 export function useTickets(): Ticket[] {
-  return useSyncExternalStore(ticketStore.subscribe, ticketStore.getSnapshot)
+  return useSyncExternalStore(ticketStore.subscribe, ticketStore.getActiveSnapshot)
+}
+
+/** Binds React to the archived ticket list. */
+export function useArchivedTickets(): Ticket[] {
+  return useSyncExternalStore(ticketStore.subscribe, ticketStore.getArchivedSnapshot)
 }
 
 /** Binds React to a single ticket — re-renders only when that ticket mutates. */

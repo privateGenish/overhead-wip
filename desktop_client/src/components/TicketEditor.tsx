@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
 import { Markdown } from 'tiptap-markdown'
-import { History } from 'lucide-react'
+import { Archive, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTicket } from '@/lib/ticketStore'
 import { TicketHistory } from '@/components/TicketHistory'
@@ -37,7 +37,7 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-6 py-3">
         <div className="min-w-0 flex-1">
           <div className="font-mono text-xs text-muted-foreground">{ticket.id}</div>
@@ -99,6 +99,18 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
           />
         </EditorRoot>
       </div>
+
+      {/* Floating archive button — bottom-left corner */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => ticket.setArchived(true)}
+        title="Archive ticket"
+        className="absolute bottom-4 left-4 gap-1.5 text-muted-foreground hover:text-foreground"
+      >
+        <Archive className="size-3.5" />
+        Archive
+      </Button>
 
       <TicketHistory
         ticketUuid={ticket.uuid}

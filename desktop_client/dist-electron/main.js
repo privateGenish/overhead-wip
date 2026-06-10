@@ -8,6 +8,7 @@ var db = null;
 function initSqlite(file) {
 	if (db) return;
 	db = new DatabaseSync(file);
+	db.exec("PRAGMA foreign_keys = ON");
 	db.exec(`
     CREATE TABLE IF NOT EXISTS tickets (
       uuid        TEXT PRIMARY KEY,
@@ -17,6 +18,7 @@ function initSqlite(file) {
       status      TEXT NOT NULL,
       backlog     INTEGER NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '',
+      archived    INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -27,7 +29,7 @@ function initSqlite(file) {
     );
 
     CREATE TABLE IF NOT EXISTS ticket_history (
-      ticket_uuid  TEXT    NOT NULL,
+      ticket_uuid  TEXT    NOT NULL REFERENCES tickets(uuid) ON DELETE CASCADE,
       ts           INTEGER NOT NULL,
       description  TEXT    NOT NULL,
       hash         TEXT    NOT NULL,

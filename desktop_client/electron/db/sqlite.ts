@@ -6,6 +6,7 @@ let db: DatabaseSync | null = null
 export function initSqlite(file: string): void {
   if (db) return
   db = new DatabaseSync(file)
+  db.exec('PRAGMA foreign_keys = ON')
   db.exec(`
     CREATE TABLE IF NOT EXISTS tickets (
       uuid        TEXT PRIMARY KEY,
@@ -15,6 +16,7 @@ export function initSqlite(file: string): void {
       status      TEXT NOT NULL,
       backlog     INTEGER NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '',
+      archived    INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -25,7 +27,7 @@ export function initSqlite(file: string): void {
     );
 
     CREATE TABLE IF NOT EXISTS ticket_history (
-      ticket_uuid  TEXT    NOT NULL,
+      ticket_uuid  TEXT    NOT NULL REFERENCES tickets(uuid) ON DELETE CASCADE,
       ts           INTEGER NOT NULL,
       description  TEXT    NOT NULL,
       hash         TEXT    NOT NULL,
@@ -57,6 +59,7 @@ export interface TicketRow {
   status: string
   backlog: 0 | 1
   description: string
+  archived: 0 | 1
   created_at: number
   updated_at: number
 }

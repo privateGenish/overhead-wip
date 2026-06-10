@@ -7,6 +7,7 @@ import { Product } from '@/views/Product'
 import { Backlog } from '@/views/Backlog'
 import { All } from '@/views/All'
 import { Settings } from '@/views/Settings'
+import { Archived } from '@/views/Archived'
 import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -21,6 +22,7 @@ const VIEWS: Record<string, React.ReactNode> = {
 
 const OVERLAY_VIEWS: Record<string, { label: string; view: React.ReactNode }> = {
   Settings: { label: 'Settings', view: <Settings /> },
+  Archived: { label: 'Archived Tickets', view: <Archived /> },
 }
 
 function App() {

@@ -22,6 +22,7 @@ export class FeatureTicket extends Ticket {
             data.status,
             data.backlog,
             data.description,
+            data.archived,
           ),
       ),
     )

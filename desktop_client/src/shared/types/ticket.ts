@@ -27,6 +27,7 @@ export const ticketDataSchema = z.object({
   status: ticketStatusSchema,
   backlog: z.boolean(),
   description: z.string().default(''),
+  archived: z.boolean().default(false),
 })
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ export abstract class Ticket {
   status: TicketStatus
   backlog: boolean    // true = ticket is parked in the backlog
   description: string // markdown body
+  archived: boolean   // true = hidden from regular views
 
   /** Per-instance subscribers — notified on every mutation. */
   #listeners = new Set<() => void>()
@@ -124,6 +126,7 @@ export abstract class Ticket {
     status: TicketStatus,
     backlog: boolean = false,
     description: string = '',
+    archived: boolean = false,
   ) {
     if (!Ticket.#constructing) {
       throw new Error('Use a subclass create() or Ticket.load() — not new.')
@@ -135,6 +138,7 @@ export abstract class Ticket {
     this.status = status
     this.backlog = backlog
     this.description = description
+    this.archived = archived
   }
 
   // --- Static setup (called by the store at startup) ---
@@ -255,6 +259,11 @@ export abstract class Ticket {
     this.#changed()
   }
 
+  setArchived(archived: boolean): void {
+    this.archived = archived
+    this.#changed()
+  }
+
   delete(): void {
     if (this.#deleted) return
     this.#deleted = true
@@ -276,6 +285,7 @@ export abstract class Ticket {
       status: this.status,
       backlog: this.backlog,
       description: this.description,
+      archived: this.archived,
     }
   }
 }

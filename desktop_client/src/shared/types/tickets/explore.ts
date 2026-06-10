@@ -22,6 +22,7 @@ export class ExploreTicket extends Ticket {
             data.status,
             data.backlog,
             data.description,
+            data.archived,
           ),
       ),
     )

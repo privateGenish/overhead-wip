@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { IconUser } from '@tabler/icons-react'
-import { PlusIcon, Settings } from 'lucide-react'
+import { Archive, PlusIcon, Settings } from 'lucide-react'
 
 const NAV_GROUPS = [
   ['Home', 'Execute', 'Explore', 'Product'],
@@ -60,6 +60,10 @@ export function Navbar({ active, onSelect }: NavbarProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => onSelect('Archived')}>
+              <Archive className="h-4 w-4" />
+              Archived Tickets
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onSelect('Settings')}>
               <Settings className="h-4 w-4" />
               Settings
