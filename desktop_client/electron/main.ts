@@ -2,6 +2,8 @@ import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initSqlite } from './db/sqlite'
+import { getVaultDir, initVault } from './vault/vaultManager'
+import { initVaultWatcher, stopVaultWatcher } from './vault/vaultWatcher'
 import { registerGeneralAPI } from './ipc/generalAPI'
 import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
 import { registerHistoryAPI } from './ipc/historyAPI'
@@ -13,6 +15,12 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
 let win: BrowserWindow | null = null
+
+function notifyVaultTicketUpdated(uuid: string): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('vault:ticket-updated', uuid)
+  }
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -32,7 +40,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  initSqlite(path.join(app.getPath('userData'), 'overhead.db'))
+  const userData = app.getPath('userData')
+  initSqlite(path.join(userData, 'overhead.db'))
+  initVault(path.join(userData, 'vault'))
+  initVaultWatcher(getVaultDir(), notifyVaultTicketUpdated)
   registerGeneralAPI()
   registerTicketAPI()
   registerHistoryAPI()
@@ -41,6 +52,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   flushHistory()
+  void stopVaultWatcher()
 })
 
 app.on('window-all-closed', () => {

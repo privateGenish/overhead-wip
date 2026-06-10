@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
 import { Markdown } from 'tiptap-markdown'
 import { Archive, History } from 'lucide-react'
@@ -28,7 +28,15 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
   const [editing, setEditing] = useState(false) // default: View (read-only)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [editorKey, setEditorKey] = useState(0)
+  const previousTicketRef = useRef(ticket)
   useTicket(ticket) // re-render when this ticket mutates
+  const contentKey = editing ? 'editing' : ticket.description
+
+  useEffect(() => {
+    if (previousTicketRef.current === ticket) return
+    previousTicketRef.current = ticket
+    setEditorKey((key) => key + 1)
+  }, [ticket])
 
   function handleRestore(description: string) {
     ticket.setDescription(description)
@@ -81,7 +89,7 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
           <EditorContent
             // Remount on ticket change or mode toggle — reloads content
             // (latest markdown) and applies the new editable state.
-            key={`${ticket.uuid}:${editing}:${editorKey}`}
+            key={`${ticket.uuid}:${editing}:${editorKey}:${contentKey}`}
             extensions={extensions}
             editable={editing}
             onCreate={({ editor }) => {

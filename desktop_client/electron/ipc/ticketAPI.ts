@@ -1,8 +1,11 @@
 import { ipcMain } from 'electron'
 import { runSql, historyInsert } from '../db/sqlite'
+import { vaultWrite, vaultDelete, vaultClear } from '../vault/vaultManager'
 
 const TICKET_TABLE_RE = /\btickets\b/i
 const SELECT_RE = /^\s*SELECT/i
+const DELETE_RE = /^\s*DELETE/i
+const DELETE_ALL_RE = /DELETE\s+FROM\s+tickets\s*$/i
 
 /** How long a ticket must sit unchanged before its description is snapshotted. */
 const HISTORY_DEBOUNCE_MS = 30_000
@@ -53,9 +56,16 @@ export function flushHistory(): void {
 export function registerTicketAPI(): void {
   ipcMain.handle('db:ticket', (_e, sql: string, params: unknown[] = []) => {
     validateTicketSql(sql)
+    if (DELETE_ALL_RE.test(sql)) {
+      vaultClear()
+    } else if (DELETE_RE.test(sql)) {
+      vaultDelete(params[0] as string)
+    }
     const result = runSql(sql, params)
-    if (!SELECT_RE.test(sql)) {
-      onTicketWritten(params[0] as string | undefined)
+    if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql)) {
+      const uuid = params[0] as string | undefined
+      onTicketWritten(uuid)      // debounced history snapshot
+      if (uuid) vaultWrite(uuid) // eager markdown mirror — reflects current state at once
     }
     return result
   })

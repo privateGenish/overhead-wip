@@ -35,6 +35,9 @@ export class TicketStore {
     Ticket.setSaveHook((ticket) => ticketClient.upsert(ticket.toJSON()))
     Ticket.setDeleteHook((ticket) => ticketClient.delete(ticket.uuid))
     Ticket.setGenerateIdHook(() => Counter.next())
+    window.db.onVaultTicketUpdated?.((uuid) => {
+      void this.syncFromStorage(uuid)
+    })
     void this.#hydrate()
   }
 
@@ -91,6 +94,31 @@ export class TicketStore {
     this.#tickets = [...this.#tickets, ticket]
     this.#notify()
     return ticket
+  }
+
+  async syncFromStorage(uuid: string): Promise<void> {
+    const data = await ticketClient.get(uuid)
+    const existing = this.getByUuid(uuid)
+
+    if (!data) {
+      if (!existing) return
+      this.#untrack(existing)
+      this.#tickets = this.#tickets.filter((ticket) => ticket !== existing)
+      this.#notify()
+      return
+    }
+
+    const synced = Ticket.load(data)
+    if (existing) {
+      this.#untrack(existing)
+      this.#tickets = this.#tickets.map((ticket) => (
+        ticket === existing ? synced : ticket
+      ))
+    } else {
+      this.#tickets = [...this.#tickets, synced]
+    }
+    this.#track(synced)
+    this.#notify()
   }
 
   async deleteAll(): Promise<void> {

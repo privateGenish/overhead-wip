@@ -5,4 +5,13 @@ contextBridge.exposeInMainWorld('db', {
   ticket:  (sql: string, params?: unknown[]) => ipcRenderer.invoke('db:ticket', sql, params ?? []),
   history:      (ticketUuid: string) => ipcRenderer.invoke('db:history', ticketUuid),
   historyFlush: (ticketUuid: string) => ipcRenderer.invoke('db:history:flush', ticketUuid),
+  onVaultTicketUpdated: (callback: (ticketUuid: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, ticketUuid: string) => {
+      callback(ticketUuid)
+    }
+    ipcRenderer.on('vault:ticket-updated', listener)
+    return () => {
+      ipcRenderer.removeListener('vault:ticket-updated', listener)
+    }
+  },
 })
