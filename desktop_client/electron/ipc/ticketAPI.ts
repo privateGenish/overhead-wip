@@ -26,7 +26,7 @@ function currentDescription(uuid: string): string | null {
 }
 
 /** Snapshots a ticket's current description into history, clearing its timer. */
-function snapshot(uuid: string): void {
+export function snapshotTicket(uuid: string): void {
   debounceTimers.delete(uuid)
   const description = currentDescription(uuid)
   if (description !== null) historyInsert(uuid, description)
@@ -37,7 +37,7 @@ function onTicketWritten(uuid: string | undefined): void {
   if (!uuid) return
   const existing = debounceTimers.get(uuid)
   if (existing) clearTimeout(existing)
-  debounceTimers.set(uuid, setTimeout(() => snapshot(uuid), HISTORY_DEBOUNCE_MS))
+  debounceTimers.set(uuid, setTimeout(() => snapshotTicket(uuid), HISTORY_DEBOUNCE_MS))
 }
 
 /** Fires every pending snapshot immediately — call before the app quits. */

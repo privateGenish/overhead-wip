@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
 import { Markdown } from 'tiptap-markdown'
+import { History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTicket } from '@/lib/ticketStore'
+import { TicketHistory } from '@/components/TicketHistory'
 import type { Ticket } from '@/shared/types'
 import './ticket-editor.css'
 
@@ -24,7 +26,15 @@ interface TicketEditorProps {
  */
 export function TicketEditor({ ticket }: TicketEditorProps) {
   const [editing, setEditing] = useState(false) // default: View (read-only)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [editorKey, setEditorKey] = useState(0)
   useTicket(ticket) // re-render when this ticket mutates
+
+  function handleRestore(description: string) {
+    ticket.setDescription(description)
+    void window.db.historyFlush(ticket.uuid) // snapshot the restored version immediately
+    setEditorKey((k) => k + 1) // force Novel editor to remount with new content
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -42,9 +52,28 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
             <h1 className="truncate text-lg font-semibold">{ticket.title}</h1>
           )}
         </div>
-        <Button variant="outline" size="sm" onClick={() => setEditing((e) => !e)}>
-          {editing ? 'View' : 'Edit'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {editing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHistoryOpen(true)}
+            >
+              <History className="size-3.5" />
+              History
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (editing) void window.db.historyFlush(ticket.uuid)
+              setEditing((e) => !e)
+            }}
+          >
+            {editing ? 'View' : 'Edit'}
+          </Button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -52,7 +81,7 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
           <EditorContent
             // Remount on ticket change or mode toggle — reloads content
             // (latest markdown) and applies the new editable state.
-            key={`${ticket.uuid}:${editing}`}
+            key={`${ticket.uuid}:${editing}:${editorKey}`}
             extensions={extensions}
             editable={editing}
             onCreate={({ editor }) => {
@@ -70,6 +99,13 @@ export function TicketEditor({ ticket }: TicketEditorProps) {
           />
         </EditorRoot>
       </div>
+
+      <TicketHistory
+        ticketUuid={ticket.uuid}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        onRestore={handleRestore}
+      />
     </div>
   )
 }

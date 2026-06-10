@@ -46,6 +46,7 @@ function ready() {
 * never produce duplicate versions.
 */
 function historyInsert(ticketUuid, description) {
+	if (!description.trim()) return;
 	const hash = createHash("sha256").update(description).digest("hex");
 	if (ready().prepare("SELECT hash FROM ticket_history WHERE ticket_uuid = ? ORDER BY ts DESC LIMIT 1").get(ticketUuid)?.hash === hash) return;
 	const ts = Math.floor(Date.now() / 1e3);
@@ -86,7 +87,7 @@ function currentDescription(uuid) {
 	return runSql("SELECT description FROM tickets WHERE uuid = ? LIMIT 1", [uuid])?.[0]?.description ?? null;
 }
 /** Snapshots a ticket's current description into history, clearing its timer. */
-function snapshot(uuid) {
+function snapshotTicket(uuid) {
 	debounceTimers.delete(uuid);
 	const description = currentDescription(uuid);
 	if (description !== null) historyInsert(uuid, description);
@@ -96,7 +97,7 @@ function onTicketWritten(uuid) {
 	if (!uuid) return;
 	const existing = debounceTimers.get(uuid);
 	if (existing) clearTimeout(existing);
-	debounceTimers.set(uuid, setTimeout(() => snapshot(uuid), HISTORY_DEBOUNCE_MS));
+	debounceTimers.set(uuid, setTimeout(() => snapshotTicket(uuid), HISTORY_DEBOUNCE_MS));
 }
 /** Fires every pending snapshot immediately — call before the app quits. */
 function flushHistory() {
@@ -121,6 +122,11 @@ function registerHistoryAPI() {
 	ipcMain.handle("db:history", (_e, ticketUuid) => {
 		if (typeof ticketUuid !== "string") throw new Error("db:history expects a ticket UUID string.");
 		return historyGet(ticketUuid);
+	});
+	/** Immediately snapshots a ticket, bypassing the debounce. Called on edit→view. */
+	ipcMain.handle("db:history:flush", (_e, ticketUuid) => {
+		if (typeof ticketUuid !== "string") throw new Error("db:history:flush expects a ticket UUID string.");
+		snapshotTicket(ticketUuid);
 	});
 }
 //#endregion

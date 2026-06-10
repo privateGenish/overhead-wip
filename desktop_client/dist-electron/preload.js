@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("db", {
 	query: (sql, params) => ipcRenderer.invoke("db:query", sql, params ?? []),
 	ticket: (sql, params) => ipcRenderer.invoke("db:ticket", sql, params ?? []),
-	history: (ticketUuid) => ipcRenderer.invoke("db:history", ticketUuid)
+	history: (ticketUuid) => ipcRenderer.invoke("db:history", ticketUuid),
+	historyFlush: (ticketUuid) => ipcRenderer.invoke("db:history:flush", ticketUuid)
 });
 //#endregion

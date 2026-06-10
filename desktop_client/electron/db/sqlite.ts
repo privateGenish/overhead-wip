@@ -71,6 +71,8 @@ export interface TicketRow {
  * never produce duplicate versions.
  */
 export function historyInsert(ticketUuid: string, description: string): void {
+  if (!description.trim()) return
+
   const hash = createHash('sha256').update(description).digest('hex')
 
   const last = ready()

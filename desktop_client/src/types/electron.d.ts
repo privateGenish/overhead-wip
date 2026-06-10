@@ -3,7 +3,8 @@ declare global {
     db: {
       query:   (sql: string, params?: unknown[]) => Promise<unknown>
       ticket:  (sql: string, params?: unknown[]) => Promise<unknown>
-      history: (ticketUuid: string) => Promise<{ ts: number; description: string }[]>
+      history:      (ticketUuid: string) => Promise<{ ts: number; description: string }[]>
+      historyFlush: (ticketUuid: string) => Promise<void>
     }
   }
 }
