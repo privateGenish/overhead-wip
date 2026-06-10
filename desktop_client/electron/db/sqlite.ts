@@ -1,93 +1,110 @@
-/**
- * SQLite handle for the Electron main process.
- *
- * One generic uuid-keyed JSON blob store — the schema is intentionally
- * minimal so any record shape (tickets, notes, settings, …) can live here.
- * Application code at the renderer side owns the actual shapes and validates
- * on read.
- *
- * Uses `node:sqlite` (built into Node 24, which Electron 42 ships with) —
- * no native compilation, no extra dependency.
- */
-
 import { DatabaseSync } from 'node:sqlite'
+import { createHash } from 'node:crypto'
 
 let db: DatabaseSync | null = null
-let getStmt: ReturnType<DatabaseSync['prepare']> | null = null
-let allStmt: ReturnType<DatabaseSync['prepare']> | null = null
-let putStmt: ReturnType<DatabaseSync['prepare']> | null = null
-let delStmt: ReturnType<DatabaseSync['prepare']> | null = null
 
-/**
- * One-time init. Caller resolves the file path (use `':memory:'` for tests).
- * Repeated calls after the first are no-ops.
- */
 export function initSqlite(file: string): void {
   if (db) return
   db = new DatabaseSync(file)
-
   db.exec(`
-    CREATE TABLE IF NOT EXISTS store (
-      uuid TEXT PRIMARY KEY,
-      data TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS tickets (
+      uuid        TEXT PRIMARY KEY,
+      id          TEXT NOT NULL,
+      title       TEXT NOT NULL,
+      type        TEXT NOT NULL CHECK(type IN ('Explore', 'Feature', 'Execute')),
+      status      TEXT NOT NULL,
+      backlog     INTEGER NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT '',
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
     );
-  `)
 
-  getStmt = db.prepare('SELECT data FROM store WHERE uuid = ?')
-  allStmt = db.prepare('SELECT data FROM store')
-  putStmt = db.prepare(`
-    INSERT INTO store (uuid, data) VALUES (?, ?)
-    ON CONFLICT(uuid) DO UPDATE SET data = excluded.data
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ticket_history (
+      ticket_uuid  TEXT    NOT NULL,
+      ts           INTEGER NOT NULL,
+      description  TEXT    NOT NULL,
+      hash         TEXT    NOT NULL,
+      PRIMARY KEY (ticket_uuid, ts)
+    );
+
   `)
-  delStmt = db.prepare('DELETE FROM store WHERE uuid = ?')
 }
 
-/** @throws if `initSqlite` hasn't been called yet. */
 function ready(): DatabaseSync {
   if (!db) throw new Error('SQLite not initialised — call initSqlite() first.')
   return db
 }
 
-/**
- * Tears down the singleton so a subsequent `initSqlite()` opens a fresh
- * database. Intended for tests — production never calls this.
- */
 export function __resetSqliteForTests(): void {
   db?.close()
   db = null
-  getStmt = null
-  allStmt = null
-  putStmt = null
-  delStmt = null
 }
 
-// --- Single-op primitives (used by the IPC handler) ---
+// ---------------------------------------------------------------------------
+// Row types
+// ---------------------------------------------------------------------------
 
-export function dbGet(uuid: string): unknown | null {
-  ready()
-  const row = getStmt!.get(uuid) as { data: string } | undefined
-  return row ? JSON.parse(row.data) : null
+export interface TicketRow {
+  uuid: string
+  id: string
+  title: string
+  type: string
+  status: string
+  backlog: 0 | 1
+  description: string
+  created_at: number
+  updated_at: number
 }
 
-export function dbAll(): unknown[] {
-  ready()
-  const rows = allStmt!.all() as { data: string }[]
-  return rows.map((r) => JSON.parse(r.data))
+// ---------------------------------------------------------------------------
+// History ops (main-process only — not exposed via IPC)
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshots a ticket's description into history, but only if it differs from
+ * the most recent snapshot. Dedup is by content hash, so identical descriptions
+ * never produce duplicate versions.
+ */
+export function historyInsert(ticketUuid: string, description: string): void {
+  const hash = createHash('sha256').update(description).digest('hex')
+
+  const last = ready()
+    .prepare('SELECT hash FROM ticket_history WHERE ticket_uuid = ? ORDER BY ts DESC LIMIT 1')
+    .get(ticketUuid) as { hash: string } | undefined
+
+  if (last?.hash === hash) return // unchanged since last snapshot — skip
+
+  const ts = Math.floor(Date.now() / 1000)
+  ready().prepare(
+    'INSERT OR REPLACE INTO ticket_history (ticket_uuid, ts, description, hash) VALUES (?, ?, ?, ?)',
+  ).run(ticketUuid, ts, description, hash)
 }
 
-export function dbPut(record: { uuid: string } & Record<string, unknown>): void {
-  ready()
-  putStmt!.run(record.uuid, JSON.stringify(record))
+export function historyGet(ticketUuid: string): { ts: number; description: string }[] {
+  return ready()
+    .prepare('SELECT ts, description FROM ticket_history WHERE ticket_uuid = ? ORDER BY ts DESC')
+    .all(ticketUuid) as { ts: number; description: string }[]
 }
 
-export function dbDelete(uuid: string): void {
-  ready()
-  delStmt!.run(uuid)
+// ---------------------------------------------------------------------------
+// Generic SQL execution (used by IPC handlers)
+// ---------------------------------------------------------------------------
+
+export function runSql(sql: string, params: unknown[] = []): unknown {
+  const stmt = ready().prepare(sql)
+  if (/^\s*SELECT/i.test(sql)) return stmt.all(...(params as [])) as unknown[]
+  return stmt.run(...(params as []))
 }
 
-// --- Transactions ---
+// ---------------------------------------------------------------------------
+// Transactions
+// ---------------------------------------------------------------------------
 
-/** Runs `fn` inside a SQLite transaction. Rolls back on throw. */
 export function transact<T>(fn: () => T): T {
   const handle = ready()
   handle.exec('BEGIN')

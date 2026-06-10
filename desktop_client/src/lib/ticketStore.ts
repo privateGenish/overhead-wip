@@ -1,18 +1,3 @@
-/**
- * App-level store of live `Ticket` instances — the runtime source of truth.
- *
- * Observable via `subscribe` / `getSnapshot`, so components bind to it with
- * `useSyncExternalStore`. The store owns the *collection* (load, create, the
- * list); per-ticket edits are made directly on the instances, which call back
- * into the store via the `TicketHost` interface so React re-renders and the
- * mutation is persisted to the local SQLite store.
- *
- * Loading is async — the store starts empty and replaces its array once
- * `loadTickets()` resolves. The tickets array reference is replaced on every
- * mutation (never mutated in place) so React's snapshot comparison detects
- * the change.
- */
-
 import { useSyncExternalStore } from 'react'
 import {
   Ticket,
@@ -20,101 +5,103 @@ import {
   ExploreTicket,
   FeatureTicket,
 } from '@/shared/types'
-import type { TicketType, TicketHost } from '@/shared/types'
+import type { TicketType } from '@/shared/types'
 import { loadTickets } from './tickets'
-import { dbClientForRenderer } from './dbClientForRenderer'
+import { ticketClient } from './ticketClient'
+import { generalClient } from './generalClient'
 import { Counter } from './counter'
 
-/** Maps each ticket type to its concrete subclass factory. */
 const factories = {
   Execute: ExecuteTicket,
   Explore: ExploreTicket,
   Feature: FeatureTicket,
 } as const
 
-export class TicketStore implements TicketHost {
+/**
+ * Pure collection: tracks which tickets exist and notifies list subscribers.
+ * Each ticket manages its own state — the store is just one of its subscribers,
+ * listening so the list view stays fresh when a ticket mutates or deletes itself.
+ */
+export class TicketStore {
   #tickets: Ticket[] = []
   #listeners = new Set<() => void>()
+  #unsubscribes = new Map<Ticket, () => void>()
 
   constructor() {
-    // Wire persistence and ID generation into every subclass create() factory.
-    Ticket.setCreateHook((ticket) => dbClientForRenderer.putTicket(ticket))
+    // Wire the ticket model's service hooks — persistence lives behind these.
+    Ticket.setCreateHook((ticket) => ticketClient.upsert(ticket.toJSON()))
+    Ticket.setSaveHook((ticket) => ticketClient.upsert(ticket.toJSON()))
+    Ticket.setDeleteHook((ticket) => ticketClient.delete(ticket.uuid))
     Ticket.setGenerateIdHook(() => Counter.next())
-    // Fire-and-forget hydration from SQLite. The UI renders empty until this
-    // resolves, then the store notifies and components re-fetch their snapshot.
     void this.#hydrate()
   }
 
   async #hydrate(): Promise<void> {
     const tickets = await loadTickets()
-    for (const ticket of tickets) ticket.bindHost(this)
+    for (const ticket of tickets) this.#track(ticket)
     this.#tickets = tickets
     this.#notify()
   }
 
-  /** Subscribe to store changes. Returns an unsubscribe function. */
-  subscribe = (listener: () => void): (() => void) => {
-    this.#listeners.add(listener)
-    return () => {
-      this.#listeners.delete(listener)
-    }
+  /** Subscribes the store to a ticket so list rows stay fresh. */
+  #track(ticket: Ticket): void {
+    const unsubscribe = ticket.subscribe(() => {
+      if (ticket.deleted) {
+        this.#untrack(ticket)
+        this.#tickets = this.#tickets.filter((t) => t !== ticket)
+      } else {
+        this.#tickets = [...this.#tickets]
+      }
+      this.#notify()
+    })
+    this.#unsubscribes.set(ticket, unsubscribe)
   }
 
-  /** Current tickets. Reference is stable until a mutation replaces it. */
+  #untrack(ticket: Ticket): void {
+    this.#unsubscribes.get(ticket)?.()
+    this.#unsubscribes.delete(ticket)
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
+  }
+
   getSnapshot = (): Ticket[] => this.#tickets
 
   #notify(): void {
     for (const listener of this.#listeners) listener()
   }
 
-  /** Find one ticket by its uuid. */
   getByUuid(uuid: string): Ticket | undefined {
     return this.#tickets.find((t) => t.uuid === uuid)
   }
 
-  /** Create a new ticket of the given type, persist it, and append it. */
   async create(type: TicketType, title: string): Promise<Ticket> {
-    // factories[type].create() constructs + persists via Ticket.persist()
     const ticket = await factories[type].create(title)
-    ticket.bindHost(this)
+    this.#track(ticket)
     this.#tickets = [...this.#tickets, ticket]
     this.#notify()
     return ticket
   }
 
-  // --- TicketHost: callbacks invoked by the ticket instances themselves ---
-
-  /** A ticket's field changed — persist and re-render. */
-  onTicketChanged(ticket: Ticket): void {
-    // Fire-and-forget; the in-memory state is already the source of truth for
-    // the UI. A failed write surfaces in the main-process console for now.
-    void dbClientForRenderer.putTicket(ticket)
-    this.#tickets = [...this.#tickets]
-    this.#notify()
-  }
-
-  /** A ticket asked to be removed — drop from store and DB. */
-  onTicketRemoved(ticket: Ticket): void {
-    void dbClientForRenderer.delete(ticket.uuid)
-    this.#tickets = this.#tickets.filter((t) => t !== ticket)
-    this.#notify()
-  }
-
-  /** Delete every ticket from the store and DB, and reset the counter. */
   async deleteAll(): Promise<void> {
-    const uuids = this.#tickets.map((t) => t.uuid)
-    for (const t of this.#tickets) t.delete()
-    await Promise.all(uuids.map((uuid) => dbClientForRenderer.delete(uuid)))
-    await dbClientForRenderer.delete('COUNTER')
+    for (const ticket of this.#tickets) this.#untrack(ticket)
+    await ticketClient.deleteAll()
+    await generalClient.settingDelete('counter')
     this.#tickets = []
     this.#notify()
   }
 }
 
-/** The single app-wide ticket store. */
 export const ticketStore = new TicketStore()
 
-/** React hook — subscribes a component to the ticket store. */
+/** Binds React to the ticket list — re-renders on add/remove and any ticket change. */
 export function useTickets(): Ticket[] {
   return useSyncExternalStore(ticketStore.subscribe, ticketStore.getSnapshot)
+}
+
+/** Binds React to a single ticket — re-renders only when that ticket mutates. */
+export function useTicket(ticket: Ticket): number {
+  return useSyncExternalStore(ticket.subscribe, ticket.getVersion)
 }

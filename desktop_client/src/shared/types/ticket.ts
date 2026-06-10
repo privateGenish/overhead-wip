@@ -49,15 +49,6 @@ export function isTicketData(raw: unknown): raw is TicketData {
 /** Rebuilds a concrete ticket instance from plain data. */
 export type TicketLoader = (data: TicketData) => Ticket
 
-/**
- * The store's side of the ticket ↔ store relationship.
- * A ticket calls these when it mutates so the store can re-render and save.
- */
-export interface TicketHost {
-  onTicketChanged(ticket: Ticket): void
-  onTicketRemoved(ticket: Ticket): void
-}
-
 // ---------------------------------------------------------------------------
 // Abstract base class
 // ---------------------------------------------------------------------------
@@ -93,6 +84,17 @@ export abstract class Ticket {
    */
   static #generateId: (() => Promise<string>) | null = null
 
+  /**
+   * Called on every field mutation. Wired by the store to the SQLite upsert.
+   * Not set in tests — mutations are local-only there.
+   */
+  static #save: ((ticket: Ticket) => Promise<void>) | null = null
+
+  /**
+   * Called when a ticket deletes itself. Wired by the store to the SQLite delete.
+   */
+  static #delete: ((ticket: Ticket) => Promise<void>) | null = null
+
   // --- Fields ---
 
   abstract readonly type: TicketType
@@ -104,7 +106,14 @@ export abstract class Ticket {
   backlog: boolean    // true = ticket is parked in the backlog
   description: string // markdown body
 
-  #host: TicketHost | null = null
+  /** Per-instance subscribers — notified on every mutation. */
+  #listeners = new Set<() => void>()
+
+  /** Bumped on every mutation — the snapshot token for useSyncExternalStore. */
+  #version = 0
+
+  /** True once `delete()` has been called — the instance is inert from then on. */
+  #deleted = false
 
   // --- Constructor ---
 
@@ -138,6 +147,16 @@ export abstract class Ticket {
   /** Registers the hook that generates sequential IDs (e.g. OVH-001). */
   static setGenerateIdHook(hook: () => Promise<string>): void {
     Ticket.#generateId = hook
+  }
+
+  /** Registers the hook that persists a ticket after every mutation. */
+  static setSaveHook(hook: (ticket: Ticket) => Promise<void>): void {
+    Ticket.#save = hook
+  }
+
+  /** Registers the hook that removes a ticket from storage on delete(). */
+  static setDeleteHook(hook: (ticket: Ticket) => Promise<void>): void {
+    Ticket.#delete = hook
   }
 
   // --- Protected helpers for subclasses ---
@@ -190,36 +209,59 @@ export abstract class Ticket {
     return loader(data)
   }
 
-  /** Connects this ticket to the store so mutations trigger saves and re-renders. */
-  bindHost(host: TicketHost): void {
-    this.#host = host
+  // --- Subscriptions (per instance) ---
+
+  /** Subscribes to this ticket's mutations. Returns an unsubscribe function. */
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
+  }
+
+  /** Monotonic mutation counter — pair with `subscribe` in useSyncExternalStore. */
+  getVersion = (): number => this.#version
+
+  /** True once the ticket has deleted itself. */
+  get deleted(): boolean {
+    return this.#deleted
+  }
+
+  /** Persists this ticket and notifies subscribers. Runs after every mutation. */
+  #changed(): void {
+    if (this.#deleted) return
+    this.#version++
+    void Ticket.#save?.(this)
+    for (const listener of this.#listeners) listener()
   }
 
   // Mutations — call directly on the instance.
 
   setTitle(title: string): void {
     this.title = title
-    this.#host?.onTicketChanged(this)
+    this.#changed()
   }
 
   setStatus(status: TicketStatus): void {
     this.status = status
-    this.#host?.onTicketChanged(this)
+    this.#changed()
   }
 
   setBacklog(backlog: boolean): void {
     this.backlog = backlog
-    this.#host?.onTicketChanged(this)
+    this.#changed()
   }
 
   setDescription(description: string): void {
     this.description = description
-    this.#host?.onTicketChanged(this)
+    this.#changed()
   }
 
   delete(): void {
-    this.#host?.onTicketRemoved(this)
-    this.#host = null // make instance inert — any further mutations are no-ops
+    if (this.#deleted) return
+    this.#deleted = true
+    this.#version++
+    void Ticket.#delete?.(this)
+    for (const listener of this.#listeners) listener()
+    this.#listeners.clear() // instance is inert — further mutations are no-ops
   }
 
   // --- Serialization ---

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
 import { Markdown } from 'tiptap-markdown'
 import { Button } from '@/components/ui/button'
+import { useTicket } from '@/lib/ticketStore'
 import type { Ticket } from '@/shared/types'
 import './ticket-editor.css'
 
@@ -23,6 +24,7 @@ interface TicketEditorProps {
  */
 export function TicketEditor({ ticket }: TicketEditorProps) {
   const [editing, setEditing] = useState(false) // default: View (read-only)
+  useTicket(ticket) // re-render when this ticket mutates
 
   return (
     <div className="flex h-full flex-col">

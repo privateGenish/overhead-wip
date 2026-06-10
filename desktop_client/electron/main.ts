@@ -1,8 +1,10 @@
 import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { registerLocalStorageAPI } from './ipc/localStorageAPI'
 import { initSqlite } from './db/sqlite'
+import { registerGeneralAPI } from './ipc/generalAPI'
+import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
+import { registerHistoryAPI } from './ipc/historyAPI'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -31,8 +33,14 @@ function createWindow() {
 
 app.whenReady().then(() => {
   initSqlite(path.join(app.getPath('userData'), 'overhead.db'))
-  registerLocalStorageAPI()
+  registerGeneralAPI()
+  registerTicketAPI()
+  registerHistoryAPI()
   createWindow()
+})
+
+app.on('before-quit', () => {
+  flushHistory()
 })
 
 app.on('window-all-closed', () => {
