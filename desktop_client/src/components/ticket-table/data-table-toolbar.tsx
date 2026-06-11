@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { DataTableFacetedFilter } from './data-table-faceted-filter'
+import type { TicketType } from '@/shared/types'
 
 const typeOptions = [
   { label: 'Explore', value: 'Explore' },
@@ -11,7 +12,31 @@ const typeOptions = [
   { label: 'Execute', value: 'Execute' },
 ]
 
-const statusOptions = [
+const statusOptionsByType: Record<TicketType, Array<{ label: string; value: string }>> = {
+  Explore: [
+    { label: 'Open', value: 'Open' },
+    { label: 'In Progress', value: 'In Progress' },
+    { label: 'Concluded', value: 'Concluded' },
+    { label: 'Not Needed', value: 'Not Needed' },
+  ],
+  Feature: [
+    { label: 'Idea', value: 'Idea' },
+    { label: 'Scoped', value: 'Scoped' },
+    { label: 'In Progress', value: 'In Progress' },
+    { label: 'Built', value: 'Built' },
+    { label: 'Canceled', value: 'Canceled' },
+  ],
+  Execute: [
+    { label: 'Draft', value: 'Draft' },
+    { label: 'Ready', value: 'Ready' },
+    { label: 'In Progress', value: 'In Progress' },
+    { label: 'Done', value: 'Done' },
+    { label: 'Failed', value: 'Failed' },
+    { label: 'Rejected', value: 'Rejected' },
+  ],
+}
+
+const allStatusOptions = [
   { label: 'Open', value: 'Open' },
   { label: 'In Progress', value: 'In Progress' },
   { label: 'Concluded', value: 'Concluded' },
@@ -31,12 +56,14 @@ interface DataTableToolbarProps<TData> {
   table: Table<TData>
   hideTypeFilter?: boolean
   showBacklogFilter?: boolean
+  fixedType?: TicketType
 }
 
 export function DataTableToolbar<TData>({
   table,
   hideTypeFilter = false,
   showBacklogFilter = false,
+  fixedType,
 }: DataTableToolbarProps<TData>) {
   const columnFilters = table.getState().columnFilters
   const backlogColumn = table.getColumn('backlog')
@@ -49,6 +76,8 @@ export function DataTableToolbar<TData>({
   const isFiltered =
     columnFilters.length > 0 &&
     !(columnFilters.length === 1 && hasDefaultBacklogFilter)
+
+  const statusOptions = fixedType ? statusOptionsByType[fixedType] : allStatusOptions
 
   function resetFilters() {
     table.resetColumnFilters()

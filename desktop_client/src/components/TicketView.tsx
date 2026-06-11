@@ -42,6 +42,7 @@ export function TicketView({ filter, fixedType }: TicketViewProps) {
         ] : []}
         hideTypeFilter={Boolean(fixedType)}
         showBacklogFilter={Boolean(fixedType)}
+        fixedType={fixedType}
         onOpenTicket={setSelectedUuid}
       />
     </div>

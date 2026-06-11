@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/table'
 import { DataTablePagination } from './data-table-pagination'
 import { DataTableToolbar } from './data-table-toolbar'
+import type { TicketType } from '@/shared/types'
 
 declare module '@tanstack/react-table' {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -39,6 +40,7 @@ interface DataTableProps<TData, TValue> {
   defaultColumnFilters?: ColumnFiltersState
   hideTypeFilter?: boolean
   showBacklogFilter?: boolean
+  fixedType?: TicketType
   onOpenTicket?: (uuid: string) => void
 }
 
@@ -48,6 +50,7 @@ export function DataTable<TData, TValue>({
   defaultColumnFilters = [],
   hideTypeFilter = false,
   showBacklogFilter = false,
+  fixedType,
   onOpenTicket,
 }: DataTableProps<TData, TValue>) {
   const [rowSelection, setRowSelection] = React.useState({})
@@ -82,6 +85,7 @@ export function DataTable<TData, TValue>({
         table={table}
         hideTypeFilter={hideTypeFilter}
         showBacklogFilter={showBacklogFilter}
+        fixedType={fixedType}
       />
       <div className="overflow-hidden rounded-md border">
         <Table>

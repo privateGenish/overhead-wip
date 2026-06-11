@@ -9,7 +9,7 @@ import { IconUser } from '@tabler/icons-react'
 import { Archive, PlusIcon, Settings } from 'lucide-react'
 
 const NAV_GROUPS = [
-  ['Home', 'Execute', 'Explore', 'Product'],
+  ['Home', 'Product', 'Explore', 'Execute'],
   ['Backlog', 'All'],
 ]
 
