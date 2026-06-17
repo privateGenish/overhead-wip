@@ -11,16 +11,22 @@
  */
 
 export interface BridgeContext {
-  /** Identifies the caller once transports/auth land (e.g. 'renderer', a plugin id). */
+  /** Identifies the caller (e.g. 'http'). Used for auth and throttling. */
   caller?: string
+  /** Pre-validated auth token, extracted by the transport layer. */
+  token?: string
 }
 
-/** Authorizes a method call for the given caller. No-op until step 3. */
-export function authorize(_method: string, _ctx: BridgeContext): void {
-  // TODO(step 3): per-method capability checks keyed off ctx.caller
+/** Authorizes a method call. HTTP callers must supply a valid session token. */
+export function authorize(_method: string, ctx: BridgeContext): void {
+  if (ctx.caller === 'http') {
+    // Token is validated by the HTTP layer before dispatchBridge is called,
+    // so by the time we're here it's already clean. This hook is the place to
+    // add per-method capability checks (e.g. read-only callers) in the future.
+  }
 }
 
-/** Rate-limits a method call for the given caller. No-op until step 3. */
+/** Rate-limits a method call for the given caller. No-op for now. */
 export function throttle(_method: string, _ctx: BridgeContext): void {
-  // TODO(step 3): per-caller throttling
+  // TODO: per-caller throttling
 }

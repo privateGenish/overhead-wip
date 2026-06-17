@@ -9,6 +9,9 @@ import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
 import { registerHistoryAPI } from './ipc/historyAPI'
 import { registerRelationsAPI } from './ipc/relationsAPI'
 import { registerGraphAPI } from './ipc/graphAPI'
+import { notifyTicketUpdated } from './ipc/notify'
+import { initToken } from './servers/token'
+import { startHttpServer, stopHttpServer } from './servers/http'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -18,11 +21,6 @@ const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
 let win: BrowserWindow | null = null
 
-function notifyVaultTicketUpdated(uuid: string): void {
-  for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send('vault:ticket-updated', uuid)
-  }
-}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -45,17 +43,20 @@ app.whenReady().then(() => {
   const userData = app.getPath('userData')
   initSqlite(path.join(userData, 'overhead.db'))
   initVault(path.join(userData, 'vault'))
-  initVaultWatcher(getVaultDir(), notifyVaultTicketUpdated)
+  initVaultWatcher(getVaultDir(), notifyTicketUpdated)
   registerGeneralAPI()
   registerTicketAPI()
   registerHistoryAPI()
   registerRelationsAPI()
   registerGraphAPI()
+  initToken(userData)
+  startHttpServer()
   createWindow()
 })
 
 app.on('before-quit', () => {
   flushHistory()
+  stopHttpServer()
   void stopVaultWatcher()
 })
 

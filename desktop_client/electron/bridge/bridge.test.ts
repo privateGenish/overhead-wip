@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // index.ts imports ipcMain at module load — stub it so the bridge can be
 // imported in the node test env. The tests drive dispatchBridge directly.
-vi.mock('electron', () => ({ ipcMain: { handle: () => {} } }))
+vi.mock('electron', () => ({
+  ipcMain: { handle: () => {} },
+  BrowserWindow: { getAllWindows: () => [] },
+}))
 
 import { initSqlite, __resetSqliteForTests } from '../db/sqlite'
 import { dispatchBridge } from './index'

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { runSql } from '../db/sqlite'
 import { runTicketSql } from '../ipc/ticketAPI'
+import { notifyTicketUpdated } from '../ipc/notify'
 
 const ticketTypeSchema = z.enum(['Explore', 'Feature', 'Execute'])
 type TicketType = z.infer<typeof ticketTypeSchema>
@@ -98,6 +99,7 @@ function writeTicket(t: BridgeTicket): void {
     t.backlog ? 1 : 0, t.description, t.archived ? 1 : 0,
     t.created_at, t.updated_at,
   ])
+  notifyTicketUpdated(t.uuid)
 }
 
 // --- Method input schemas ---
@@ -105,6 +107,7 @@ function writeTicket(t: BridgeTicket): void {
 const createSchema = z.object({
   title: z.string().min(1),
   type: ticketTypeSchema,
+  status: z.string().min(1).optional(),
   description: z.string().default(''),
   backlog: z.boolean().default(false),
 })
@@ -132,7 +135,7 @@ export function createTicket(input: unknown): BridgeTicket {
     id: nextId(),
     title: data.title,
     type: data.type,
-    status: INITIAL_STATUS[data.type],
+    status: data.status ?? INITIAL_STATUS[data.type],
     backlog: data.backlog,
     description: data.description,
     archived: false,
@@ -167,5 +170,6 @@ export function updateTicket(input: unknown): BridgeTicket {
 export function deleteTicket(input: unknown): { uuid: string } {
   const { uuid } = uuidSchema.parse(input)
   runTicketSql('DELETE FROM tickets WHERE uuid = ?', [uuid])
+  notifyTicketUpdated(uuid)
   return { uuid }
 }
