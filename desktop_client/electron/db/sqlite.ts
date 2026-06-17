@@ -34,6 +34,15 @@ export function initSqlite(file: string): void {
       PRIMARY KEY (ticket_uuid, ts)
     );
 
+    CREATE TABLE IF NOT EXISTS ticket_relations (
+      uuid   TEXT NOT NULL UNIQUE,
+      node_a TEXT NOT NULL REFERENCES tickets(uuid) ON DELETE CASCADE,
+      node_b TEXT NOT NULL REFERENCES tickets(uuid) ON DELETE CASCADE,
+      type   TEXT NOT NULL CHECK(type IN ('relates-to', 'blocked-by')),
+      PRIMARY KEY (node_a, node_b, type),
+      CHECK (type != 'relates-to' OR node_a < node_b)
+    );
+
   `)
 }
 

@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { runSql } from '../db/sqlite'
 
-const TICKET_TABLE_RE = /\b(tickets|ticket_history|pending_sync)\b/i
+const TICKET_TABLE_RE = /\b(tickets|ticket_history|ticket_relations|pending_sync)\b/i
 
 export function registerGeneralAPI(): void {
   ipcMain.handle('db:query', (_e, sql: string, params: unknown[] = []) => {

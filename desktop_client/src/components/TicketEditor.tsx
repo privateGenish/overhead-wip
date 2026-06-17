@@ -4,8 +4,10 @@ import { Markdown } from 'tiptap-markdown'
 import { Archive, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTicket } from '@/lib/ticketStore'
+import { Switch } from '@/components/ui/switch'
 import { TicketControlBar } from '@/components/TicketControlBar'
 import { TicketHistory } from '@/components/TicketHistory'
+import { TicketRelations } from '@/components/TicketRelations'
 import type { Ticket } from '@/shared/types'
 import './ticket-editor.css'
 
@@ -88,28 +90,42 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
 
       <TicketControlBar ticket={ticket} />
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <EditorRoot>
-          <EditorContent
-            // Remount on ticket change or mode toggle — reloads content
-            // (latest markdown) and applies the new editable state.
-            key={`${ticket.uuid}:${editing}:${editorKey}:${contentKey}`}
-            extensions={extensions}
-            editable={editing}
-            onCreate={({ editor }) => {
-              editor.commands.setContent(ticket.description, false)
-            }}
-            onUpdate={({ editor }) => {
-              const markdown = (
-                editor.storage.markdown as { getMarkdown: () => string }
-              ).getMarkdown()
-              ticket.setDescription(markdown)
-            }}
-            editorProps={{
-              attributes: { class: 'ticket-prose focus:outline-none' },
-            }}
-          />
-        </EditorRoot>
+      <div className="flex flex-1 min-h-0">
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <EditorRoot>
+            <EditorContent
+              // Remount on ticket change or mode toggle — reloads content
+              // (latest markdown) and applies the new editable state.
+              key={`${ticket.uuid}:${editing}:${editorKey}:${contentKey}`}
+              extensions={extensions}
+              editable={editing}
+              onCreate={({ editor }) => {
+                editor.commands.setContent(ticket.description, false)
+              }}
+              onUpdate={({ editor }) => {
+                const markdown = (
+                  editor.storage.markdown as { getMarkdown: () => string }
+                ).getMarkdown()
+                ticket.setDescription(markdown)
+              }}
+              editorProps={{
+                attributes: { class: 'ticket-prose focus:outline-none' },
+              }}
+            />
+          </EditorRoot>
+        </div>
+
+        <aside className="w-60 shrink-0 border-l overflow-y-auto px-4 py-5 flex flex-col gap-5">
+          <label className="flex items-center justify-between text-sm cursor-pointer">
+            <span className={ticket.backlog ? 'text-foreground' : 'text-muted-foreground'}>Backlog</span>
+            <Switch
+              checked={ticket.backlog}
+              onCheckedChange={(checked) => ticket.setBacklog(checked)}
+            />
+          </label>
+          <div className="border-t" />
+          <TicketRelations ticket={ticket} />
+        </aside>
       </div>
 
       {/* Floating archive button — bottom-right corner */}

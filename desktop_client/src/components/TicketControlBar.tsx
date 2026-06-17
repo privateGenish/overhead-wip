@@ -1,5 +1,3 @@
-import { Inbox } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -53,18 +51,6 @@ export function TicketControlBar({ ticket }: TicketControlBarProps) {
           ))}
         </SelectContent>
       </Select>
-
-      <Button
-        type="button"
-        variant={ticket.backlog ? 'secondary' : 'outline'}
-        size="sm"
-        className="gap-1.5"
-        aria-pressed={ticket.backlog}
-        onClick={() => ticket.setBacklog(!ticket.backlog)}
-      >
-        <Inbox className="size-3.5" />
-        Backlog
-      </Button>
     </div>
   )
 }

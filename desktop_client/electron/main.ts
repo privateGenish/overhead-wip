@@ -7,6 +7,7 @@ import { initVaultWatcher, stopVaultWatcher } from './vault/vaultWatcher'
 import { registerGeneralAPI } from './ipc/generalAPI'
 import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
 import { registerHistoryAPI } from './ipc/historyAPI'
+import { registerRelationsAPI } from './ipc/relationsAPI'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -47,6 +48,7 @@ app.whenReady().then(() => {
   registerGeneralAPI()
   registerTicketAPI()
   registerHistoryAPI()
+  registerRelationsAPI()
   createWindow()
 })
 
