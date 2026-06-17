@@ -26,13 +26,13 @@ export function layoutCluster(
     if (!adj.has(rel.node_a) || !adj.has(rel.node_b)) continue
 
     if (rel.type === 'blocked-by') {
-      // node_a = blocked, node_b = blocker — blocker is ABOVE, blocked is BELOW
-      adj.get(rel.node_b)!.push({ target: rel.node_a, dx: 0, dy: ROW_STEP })
-      adj.get(rel.node_a)!.push({ target: rel.node_b, dx: 0, dy: -ROW_STEP })
+      // node_a = blocked, node_b = blocker — blocker is LEFT, blocked is RIGHT
+      adj.get(rel.node_b)!.push({ target: rel.node_a, dx: COL_STEP, dy: 0 })
+      adj.get(rel.node_a)!.push({ target: rel.node_b, dx: -COL_STEP, dy: 0 })
     } else {
-      // relates-to: horizontal (side by side)
-      adj.get(rel.node_a)!.push({ target: rel.node_b, dx: COL_STEP, dy: 0 })
-      adj.get(rel.node_b)!.push({ target: rel.node_a, dx: -COL_STEP, dy: 0 })
+      // relates-to: vertical (top/bottom connectors)
+      adj.get(rel.node_a)!.push({ target: rel.node_b, dx: 0, dy: ROW_STEP })
+      adj.get(rel.node_b)!.push({ target: rel.node_a, dx: 0, dy: -ROW_STEP })
     }
   }
 

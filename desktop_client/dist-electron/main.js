@@ -51,7 +51,36 @@ function initSqlite(file) {
       CHECK (type != 'relates-to' OR node_a < node_b)
     );
 
+    CREATE TABLE IF NOT EXISTS graph_views (
+      uuid       TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS graph_view_nodes (
+      view_uuid   TEXT NOT NULL REFERENCES graph_views(uuid) ON DELETE CASCADE,
+      ticket_uuid TEXT NOT NULL REFERENCES tickets(uuid)     ON DELETE CASCADE,
+      x           REAL NOT NULL DEFAULT 0,
+      y           REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (view_uuid, ticket_uuid)
+    );
+
+    CREATE TABLE IF NOT EXISTS graph_view_edges (
+      uuid          TEXT PRIMARY KEY,
+      view_uuid     TEXT NOT NULL REFERENCES graph_views(uuid) ON DELETE CASCADE,
+      source_uuid   TEXT NOT NULL REFERENCES tickets(uuid)     ON DELETE CASCADE,
+      target_uuid   TEXT NOT NULL REFERENCES tickets(uuid)     ON DELETE CASCADE,
+      source_handle TEXT,
+      target_handle TEXT
+    );
+
   `);
+	try {
+		db.exec("ALTER TABLE graph_view_edges ADD COLUMN source_handle TEXT");
+	} catch {}
+	try {
+		db.exec("ALTER TABLE graph_view_edges ADD COLUMN target_handle TEXT");
+	} catch {}
 }
 function ready() {
 	if (!db) throw new Error("SQLite not initialised — call initSqlite() first.");
@@ -1917,7 +1946,7 @@ function registerHistoryAPI() {
 }
 //#endregion
 //#region electron/ipc/relationsAPI.ts
-function assertString(v, name) {
+function assertString$1(v, name) {
 	if (typeof v !== "string" || !v) throw new Error(`db:relation: ${name} must be a non-empty string.`);
 	return v;
 }
@@ -1927,9 +1956,9 @@ function registerRelationsAPI() {
 		if (typeof payload !== "object" || payload === null) throw new Error("db:relation: payload must be an object.");
 		if (op === "add") {
 			const { type, node_a, node_b } = payload;
-			assertString(type, "type");
-			assertString(node_a, "node_a");
-			assertString(node_b, "node_b");
+			assertString$1(type, "type");
+			assertString$1(node_a, "node_a");
+			assertString$1(node_b, "node_b");
 			if (type !== "relates-to" && type !== "blocked-by") throw new Error(`db:relation: unknown type "${type}".`);
 			if (node_a === node_b) throw new Error("db:relation: a ticket cannot relate to itself.");
 			const [a, b] = type === "relates-to" && node_a > node_b ? [node_b, node_a] : [node_a, node_b];
@@ -1949,17 +1978,104 @@ function registerRelationsAPI() {
 		}
 		if (op === "remove") {
 			const { uuid } = payload;
-			assertString(uuid, "uuid");
+			assertString$1(uuid, "uuid");
 			runSql("DELETE FROM ticket_relations WHERE uuid = ?", [uuid]);
 			return;
 		}
 		if (op === "list") {
 			const { ticketUuid } = payload;
-			assertString(ticketUuid, "ticketUuid");
+			assertString$1(ticketUuid, "ticketUuid");
 			return runSql("SELECT uuid, node_a, node_b, type FROM ticket_relations WHERE node_a = ? OR node_b = ?", [ticketUuid, ticketUuid]);
 		}
 		if (op === "listAll") return runSql("SELECT uuid, node_a, node_b, type FROM ticket_relations", []);
 		throw new Error(`db:relation: unknown op "${op}".`);
+	});
+}
+//#endregion
+//#region electron/ipc/graphAPI.ts
+function assertString(v, name) {
+	if (typeof v !== "string" || !v) throw new Error(`db:graph: ${name} must be a non-empty string.`);
+	return v;
+}
+function assertNumber(v, name) {
+	if (typeof v !== "number") throw new Error(`db:graph: ${name} must be a number.`);
+	return v;
+}
+function registerGraphAPI() {
+	ipcMain.handle("db:graph", (_e, op, payload) => {
+		if (typeof op !== "string") throw new Error("db:graph: op must be a string.");
+		if (typeof payload !== "object" || payload === null) throw new Error("db:graph: payload must be an object.");
+		const p = payload;
+		if (op === "view:list") return runSql("SELECT uuid, name, created_at FROM graph_views ORDER BY created_at ASC", []);
+		if (op === "view:create") {
+			const name = assertString(p.name, "name");
+			const uuid = randomUUID();
+			const created_at = Date.now();
+			runSql("INSERT INTO graph_views (uuid, name, created_at) VALUES (?, ?, ?)", [
+				uuid,
+				name,
+				created_at
+			]);
+			return {
+				uuid,
+				name,
+				created_at
+			};
+		}
+		if (op === "view:rename") {
+			const uuid = assertString(p.uuid, "uuid");
+			runSql("UPDATE graph_views SET name = ? WHERE uuid = ?", [assertString(p.name, "name"), uuid]);
+			return;
+		}
+		if (op === "view:delete") {
+			runSql("DELETE FROM graph_views WHERE uuid = ?", [assertString(p.uuid, "uuid")]);
+			return;
+		}
+		if (op === "node:list") return runSql("SELECT ticket_uuid, x, y FROM graph_view_nodes WHERE view_uuid = ?", [assertString(p.viewUuid, "viewUuid")]);
+		if (op === "node:upsert") {
+			runSql(`INSERT INTO graph_view_nodes (view_uuid, ticket_uuid, x, y)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(view_uuid, ticket_uuid) DO UPDATE SET x = excluded.x, y = excluded.y`, [
+				assertString(p.viewUuid, "viewUuid"),
+				assertString(p.ticketUuid, "ticketUuid"),
+				assertNumber(p.x, "x"),
+				assertNumber(p.y, "y")
+			]);
+			return;
+		}
+		if (op === "node:remove") {
+			runSql("DELETE FROM graph_view_nodes WHERE view_uuid = ? AND ticket_uuid = ?", [assertString(p.viewUuid, "viewUuid"), assertString(p.ticketUuid, "ticketUuid")]);
+			return;
+		}
+		if (op === "edge:list") return runSql("SELECT uuid, source_uuid, target_uuid, source_handle, target_handle FROM graph_view_edges WHERE view_uuid = ?", [assertString(p.viewUuid, "viewUuid")]);
+		if (op === "edge:create") {
+			const viewUuid = assertString(p.viewUuid, "viewUuid");
+			const sourceUuid = assertString(p.sourceUuid, "sourceUuid");
+			const targetUuid = assertString(p.targetUuid, "targetUuid");
+			const sourceHandle = typeof p.sourceHandle === "string" ? p.sourceHandle : null;
+			const targetHandle = typeof p.targetHandle === "string" ? p.targetHandle : null;
+			const uuid = randomUUID();
+			runSql("INSERT INTO graph_view_edges (uuid, view_uuid, source_uuid, target_uuid, source_handle, target_handle) VALUES (?, ?, ?, ?, ?, ?)", [
+				uuid,
+				viewUuid,
+				sourceUuid,
+				targetUuid,
+				sourceHandle,
+				targetHandle
+			]);
+			return {
+				uuid,
+				source_uuid: sourceUuid,
+				target_uuid: targetUuid,
+				source_handle: sourceHandle,
+				target_handle: targetHandle
+			};
+		}
+		if (op === "edge:remove") {
+			runSql("DELETE FROM graph_view_edges WHERE uuid = ?", [assertString(p.uuid, "uuid")]);
+			return;
+		}
+		throw new Error(`db:graph: unknown op "${op}".`);
 	});
 }
 //#endregion
@@ -1993,6 +2109,7 @@ app.whenReady().then(() => {
 	registerTicketAPI();
 	registerHistoryAPI();
 	registerRelationsAPI();
+	registerGraphAPI();
 	createWindow();
 });
 app.on("before-quit", () => {
