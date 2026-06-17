@@ -8,6 +8,7 @@ import { registerGeneralAPI } from './ipc/generalAPI'
 import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
 import { registerHistoryAPI } from './ipc/historyAPI'
 import { registerRelationsAPI } from './ipc/relationsAPI'
+import { registerGraphAPI } from './ipc/graphAPI'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -49,6 +50,7 @@ app.whenReady().then(() => {
   registerTicketAPI()
   registerHistoryAPI()
   registerRelationsAPI()
+  registerGraphAPI()
   createWindow()
 })
 

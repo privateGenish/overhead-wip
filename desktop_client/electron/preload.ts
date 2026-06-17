@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('db', {
   history:      (ticketUuid: string) => ipcRenderer.invoke('db:history', ticketUuid),
   historyFlush: (ticketUuid: string) => ipcRenderer.invoke('db:history:flush', ticketUuid),
   relation: (op: string, payload: unknown) => ipcRenderer.invoke('db:relation', op, payload),
+  graph: (op: string, payload?: unknown) => ipcRenderer.invoke('db:graph', op, payload ?? {}),
   onVaultTicketUpdated: (callback: (ticketUuid: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, ticketUuid: string) => {
       callback(ticketUuid)

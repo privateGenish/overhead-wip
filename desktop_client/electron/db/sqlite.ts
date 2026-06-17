@@ -43,7 +43,35 @@ export function initSqlite(file: string): void {
       CHECK (type != 'relates-to' OR node_a < node_b)
     );
 
+    CREATE TABLE IF NOT EXISTS graph_views (
+      uuid       TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS graph_view_nodes (
+      view_uuid   TEXT NOT NULL REFERENCES graph_views(uuid) ON DELETE CASCADE,
+      ticket_uuid TEXT NOT NULL REFERENCES tickets(uuid)     ON DELETE CASCADE,
+      x           REAL NOT NULL DEFAULT 0,
+      y           REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (view_uuid, ticket_uuid)
+    );
+
+    CREATE TABLE IF NOT EXISTS graph_view_edges (
+      uuid          TEXT PRIMARY KEY,
+      view_uuid     TEXT NOT NULL REFERENCES graph_views(uuid) ON DELETE CASCADE,
+      source_uuid   TEXT NOT NULL REFERENCES tickets(uuid)     ON DELETE CASCADE,
+      target_uuid   TEXT NOT NULL REFERENCES tickets(uuid)     ON DELETE CASCADE,
+      source_handle TEXT,
+      target_handle TEXT
+    );
+
   `)
+
+  // Migrate existing graph_view_edges tables that predate the handle columns.
+  // SQLite's ALTER TABLE has no IF NOT EXISTS — swallow the error if they exist.
+  try { db.exec('ALTER TABLE graph_view_edges ADD COLUMN source_handle TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE graph_view_edges ADD COLUMN target_handle TEXT') } catch { /* already exists */ }
 }
 
 function ready(): DatabaseSync {

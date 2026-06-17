@@ -1,5 +1,47 @@
 import type { TicketRelation } from '@/types/electron'
 
+/**
+ * Returns clusters of ticket uuids that are transitively related,
+ * each cluster size >= 2. Pass only NON-archived relations/uuids.
+ */
+export function findComponents(
+  relations: TicketRelation[],
+  allowedUuids: Set<string>,
+): string[][] {
+  const adj = new Map<string, string[]>()
+
+  for (const rel of relations) {
+    if (!allowedUuids.has(rel.node_a) || !allowedUuids.has(rel.node_b)) continue
+    if (!adj.has(rel.node_a)) adj.set(rel.node_a, [])
+    if (!adj.has(rel.node_b)) adj.set(rel.node_b, [])
+    adj.get(rel.node_a)!.push(rel.node_b)
+    adj.get(rel.node_b)!.push(rel.node_a)
+  }
+
+  const visited = new Set<string>()
+  const clusters: string[][] = []
+
+  for (const uuid of allowedUuids) {
+    if (visited.has(uuid) || !adj.has(uuid)) continue
+    const cluster: string[] = []
+    const queue = [uuid]
+    visited.add(uuid)
+    while (queue.length) {
+      const current = queue.shift()!
+      cluster.push(current)
+      for (const neighbor of adj.get(current) ?? []) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor)
+          queue.push(neighbor)
+        }
+      }
+    }
+    if (cluster.length >= 2) clusters.push(cluster)
+  }
+
+  return clusters
+}
+
 export type RelationChain = string[]
 
 /**

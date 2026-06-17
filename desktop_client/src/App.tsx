@@ -6,6 +6,7 @@ import { Explore } from '@/views/Explore'
 import { Product } from '@/views/Product'
 import { Backlog } from '@/views/Backlog'
 import { All } from '@/views/All'
+import { Graph } from '@/views/Graph'
 import { Settings } from '@/views/Settings'
 import { Archived } from '@/views/Archived'
 import { ChevronLeft } from 'lucide-react'
@@ -18,6 +19,7 @@ const VIEWS: Record<string, React.ReactNode> = {
   Product: <Product />,
   Backlog: <Backlog />,
   All: <All />,
+  Graph: <Graph />,
 }
 
 const OVERLAY_VIEWS: Record<string, { label: string; view: React.ReactNode }> = {

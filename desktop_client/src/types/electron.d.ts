@@ -7,6 +7,10 @@ export interface TicketRelation {
   type: RelationType
 }
 
+export interface GraphView      { uuid: string; name: string; created_at: number }
+export interface GraphViewNode  { ticket_uuid: string; x: number; y: number }
+export interface GraphViewEdge  { uuid: string; source_uuid: string; target_uuid: string; source_handle: string | null; target_handle: string | null }
+
 type RelationPayload =
   | { type: RelationType; node_a: string; node_b: string }
   | { uuid: string }
@@ -19,7 +23,8 @@ declare global {
       ticket:       (sql: string, params?: unknown[]) => Promise<unknown>
       history:      (ticketUuid: string) => Promise<{ ts: number; description: string }[]>
       historyFlush: (ticketUuid: string) => Promise<void>
-      relation:     (op: 'add' | 'remove' | 'list', payload: RelationPayload) => Promise<unknown>
+      relation:     (op: 'add' | 'remove' | 'list' | 'listAll', payload: RelationPayload) => Promise<unknown>
+      graph:        (op: string, payload?: unknown) => Promise<unknown>
       onVaultTicketUpdated?: (callback: (ticketUuid: string) => void) => () => void
     }
   }

@@ -10,7 +10,7 @@ import { Archive, PlusIcon, Settings } from 'lucide-react'
 
 const NAV_GROUPS = [
   ['Home', 'Product', 'Explore', 'Execute'],
-  ['Backlog', 'All'],
+  ['Backlog', 'All', 'Graph'],
 ]
 
 interface NavbarProps {
