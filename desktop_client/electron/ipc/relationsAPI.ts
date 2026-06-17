@@ -13,8 +13,16 @@ function assertString(v: unknown, name: string): string {
   return v
 }
 
-export function registerRelationsAPI(): void {
-  ipcMain.handle('db:relation', (_e, op: unknown, payload: unknown) => {
+/**
+ * Executes a relations operation and returns its result.
+ *
+ * Shared dispatch for both doors: the renderer's raw `db:relation` channel
+ * (registerRelationsAPI) and the governed bridge (which calls this directly,
+ * post-gate). Reaching this function means the caller is already authorized —
+ * it performs no auth itself, only payload validation.
+ */
+export function runRelationOp(op: unknown, payload: unknown): unknown {
+  {
     if (typeof op !== 'string') throw new Error('db:relation: op must be a string.')
     if (typeof payload !== 'object' || payload === null) throw new Error('db:relation: payload must be an object.')
 
@@ -62,5 +70,9 @@ export function registerRelationsAPI(): void {
     }
 
     throw new Error(`db:relation: unknown op "${op as string}".`)
-  })
+  }
+}
+
+export function registerRelationsAPI(): void {
+  ipcMain.handle('db:relation', (_e, op: unknown, payload: unknown) => runRelationOp(op, payload))
 }

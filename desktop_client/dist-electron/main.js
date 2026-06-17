@@ -1917,19 +1917,31 @@ function flushHistory() {
 	}
 	debounceTimers.clear();
 }
+/**
+* Runs a ticket-table SQL statement and keeps the side mirrors in sync
+* (vault markdown + debounced history snapshot).
+*
+* This is the shared write path for both doors:
+*   - the renderer's raw `db:ticket` channel (registerTicketAPI), and
+*   - the governed bridge (which calls this directly, post-gate).
+*
+* Reaching this function means the caller is already trusted/authorized —
+* it performs no auth itself.
+*/
+function runTicketSql(sql, params = []) {
+	validateTicketSql(sql);
+	if (DELETE_ALL_RE.test(sql)) vaultClear();
+	else if (DELETE_RE.test(sql)) vaultDelete(params[0]);
+	const result = runSql(sql, params);
+	if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql)) {
+		const uuid = params[0];
+		onTicketWritten(uuid);
+		if (uuid) vaultWrite(uuid);
+	}
+	return result;
+}
 function registerTicketAPI() {
-	ipcMain.handle("db:ticket", (_e, sql, params = []) => {
-		validateTicketSql(sql);
-		if (DELETE_ALL_RE.test(sql)) vaultClear();
-		else if (DELETE_RE.test(sql)) vaultDelete(params[0]);
-		const result = runSql(sql, params);
-		if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql)) {
-			const uuid = params[0];
-			onTicketWritten(uuid);
-			if (uuid) vaultWrite(uuid);
-		}
-		return result;
-	});
+	ipcMain.handle("db:ticket", (_e, sql, params = []) => runTicketSql(sql, params));
 }
 //#endregion
 //#region electron/ipc/historyAPI.ts
@@ -1950,46 +1962,55 @@ function assertString$1(v, name) {
 	if (typeof v !== "string" || !v) throw new Error(`db:relation: ${name} must be a non-empty string.`);
 	return v;
 }
+/**
+* Executes a relations operation and returns its result.
+*
+* Shared dispatch for both doors: the renderer's raw `db:relation` channel
+* (registerRelationsAPI) and the governed bridge (which calls this directly,
+* post-gate). Reaching this function means the caller is already authorized —
+* it performs no auth itself, only payload validation.
+*/
+function runRelationOp(op, payload) {
+	if (typeof op !== "string") throw new Error("db:relation: op must be a string.");
+	if (typeof payload !== "object" || payload === null) throw new Error("db:relation: payload must be an object.");
+	if (op === "add") {
+		const { type, node_a, node_b } = payload;
+		assertString$1(type, "type");
+		assertString$1(node_a, "node_a");
+		assertString$1(node_b, "node_b");
+		if (type !== "relates-to" && type !== "blocked-by") throw new Error(`db:relation: unknown type "${type}".`);
+		if (node_a === node_b) throw new Error("db:relation: a ticket cannot relate to itself.");
+		const [a, b] = type === "relates-to" && node_a > node_b ? [node_b, node_a] : [node_a, node_b];
+		const uuid = randomUUID();
+		runSql("INSERT INTO ticket_relations (uuid, node_a, node_b, type) VALUES (?, ?, ?, ?)", [
+			uuid,
+			a,
+			b,
+			type
+		]);
+		return {
+			uuid,
+			node_a: a,
+			node_b: b,
+			type
+		};
+	}
+	if (op === "remove") {
+		const { uuid } = payload;
+		assertString$1(uuid, "uuid");
+		runSql("DELETE FROM ticket_relations WHERE uuid = ?", [uuid]);
+		return;
+	}
+	if (op === "list") {
+		const { ticketUuid } = payload;
+		assertString$1(ticketUuid, "ticketUuid");
+		return runSql("SELECT uuid, node_a, node_b, type FROM ticket_relations WHERE node_a = ? OR node_b = ?", [ticketUuid, ticketUuid]);
+	}
+	if (op === "listAll") return runSql("SELECT uuid, node_a, node_b, type FROM ticket_relations", []);
+	throw new Error(`db:relation: unknown op "${op}".`);
+}
 function registerRelationsAPI() {
-	ipcMain.handle("db:relation", (_e, op, payload) => {
-		if (typeof op !== "string") throw new Error("db:relation: op must be a string.");
-		if (typeof payload !== "object" || payload === null) throw new Error("db:relation: payload must be an object.");
-		if (op === "add") {
-			const { type, node_a, node_b } = payload;
-			assertString$1(type, "type");
-			assertString$1(node_a, "node_a");
-			assertString$1(node_b, "node_b");
-			if (type !== "relates-to" && type !== "blocked-by") throw new Error(`db:relation: unknown type "${type}".`);
-			if (node_a === node_b) throw new Error("db:relation: a ticket cannot relate to itself.");
-			const [a, b] = type === "relates-to" && node_a > node_b ? [node_b, node_a] : [node_a, node_b];
-			const uuid = randomUUID();
-			runSql("INSERT INTO ticket_relations (uuid, node_a, node_b, type) VALUES (?, ?, ?, ?)", [
-				uuid,
-				a,
-				b,
-				type
-			]);
-			return {
-				uuid,
-				node_a: a,
-				node_b: b,
-				type
-			};
-		}
-		if (op === "remove") {
-			const { uuid } = payload;
-			assertString$1(uuid, "uuid");
-			runSql("DELETE FROM ticket_relations WHERE uuid = ?", [uuid]);
-			return;
-		}
-		if (op === "list") {
-			const { ticketUuid } = payload;
-			assertString$1(ticketUuid, "ticketUuid");
-			return runSql("SELECT uuid, node_a, node_b, type FROM ticket_relations WHERE node_a = ? OR node_b = ?", [ticketUuid, ticketUuid]);
-		}
-		if (op === "listAll") return runSql("SELECT uuid, node_a, node_b, type FROM ticket_relations", []);
-		throw new Error(`db:relation: unknown op "${op}".`);
-	});
+	ipcMain.handle("db:relation", (_e, op, payload) => runRelationOp(op, payload));
 }
 //#endregion
 //#region electron/ipc/graphAPI.ts

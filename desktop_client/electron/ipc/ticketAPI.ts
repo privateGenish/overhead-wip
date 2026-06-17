@@ -53,20 +53,33 @@ export function flushHistory(): void {
   debounceTimers.clear()
 }
 
+/**
+ * Runs a ticket-table SQL statement and keeps the side mirrors in sync
+ * (vault markdown + debounced history snapshot).
+ *
+ * This is the shared write path for both doors:
+ *   - the renderer's raw `db:ticket` channel (registerTicketAPI), and
+ *   - the governed bridge (which calls this directly, post-gate).
+ *
+ * Reaching this function means the caller is already trusted/authorized —
+ * it performs no auth itself.
+ */
+export function runTicketSql(sql: string, params: unknown[] = []): unknown {
+  validateTicketSql(sql)
+  if (DELETE_ALL_RE.test(sql)) {
+    vaultClear()
+  } else if (DELETE_RE.test(sql)) {
+    vaultDelete(params[0] as string)
+  }
+  const result = runSql(sql, params)
+  if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql)) {
+    const uuid = params[0] as string | undefined
+    onTicketWritten(uuid)      // debounced history snapshot
+    if (uuid) vaultWrite(uuid) // eager markdown mirror — reflects current state at once
+  }
+  return result
+}
+
 export function registerTicketAPI(): void {
-  ipcMain.handle('db:ticket', (_e, sql: string, params: unknown[] = []) => {
-    validateTicketSql(sql)
-    if (DELETE_ALL_RE.test(sql)) {
-      vaultClear()
-    } else if (DELETE_RE.test(sql)) {
-      vaultDelete(params[0] as string)
-    }
-    const result = runSql(sql, params)
-    if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql)) {
-      const uuid = params[0] as string | undefined
-      onTicketWritten(uuid)      // debounced history snapshot
-      if (uuid) vaultWrite(uuid) // eager markdown mirror — reflects current state at once
-    }
-    return result
-  })
+  ipcMain.handle('db:ticket', (_e, sql: string, params: unknown[] = []) => runTicketSql(sql, params))
 }
