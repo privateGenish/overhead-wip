@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
 import { Markdown } from 'tiptap-markdown'
 import { Archive, History } from 'lucide-react'
@@ -28,11 +28,37 @@ interface TicketEditorProps {
  * Edit / View toggle. Edits are saved to the store on every change; the
  * ticket's `description` holds markdown.
  */
+const SIDE_MIN = 160
+const SIDE_MAX = 480
+const SIDE_DEFAULT = 240
+
 export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
   const [editing, setEditing] = useState(false) // default: View (read-only)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [editorKey, setEditorKey] = useState(0)
+  const [sideWidth, setSideWidth] = useState(SIDE_DEFAULT)
+  const dragging = useRef(false)
   const previousTicketRef = useRef(ticket)
+
+  const onDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    dragging.current = true
+    const startX = e.clientX
+    const startW = sideWidth
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!dragging.current) return
+      const delta = startX - ev.clientX
+      setSideWidth(Math.min(SIDE_MAX, Math.max(SIDE_MIN, startW + delta)))
+    }
+    function onMouseUp() {
+      dragging.current = false
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }, [sideWidth])
   useTicket(ticket) // re-render when this ticket mutates
   const contentKey = editing ? 'editing' : ticket.description
 
@@ -115,7 +141,16 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
           </EditorRoot>
         </div>
 
-        <aside className="w-60 shrink-0 border-l overflow-y-auto px-4 py-5 flex flex-col gap-5">
+        {/* Drag divider */}
+        <div
+          onMouseDown={onDividerMouseDown}
+          className="w-px shrink-0 bg-border cursor-col-resize hover:bg-foreground/20 active:bg-foreground/30 transition-colors"
+        />
+
+        <aside
+          style={{ width: sideWidth }}
+          className="shrink-0 overflow-y-auto px-4 py-5 flex flex-col gap-5"
+        >
           <label className="flex items-center justify-between text-sm cursor-pointer">
             <span className={ticket.backlog ? 'text-foreground' : 'text-muted-foreground'}>Backlog</span>
             <Switch

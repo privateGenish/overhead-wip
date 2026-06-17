@@ -116,7 +116,7 @@ function RelationGroup({
         // handler from firing before onClick on the list items, which would
         // unmount the dropdown and swallow the click.
         <div
-          className="rounded-md border bg-popover shadow-md w-72"
+          className="rounded-md border bg-popover shadow-md w-full"
           onMouseDown={(e) => e.stopPropagation()}
         >
           <input
