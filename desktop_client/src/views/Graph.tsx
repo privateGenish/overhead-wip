@@ -620,7 +620,10 @@ export function Graph() {
     void init()
   }, [])
 
-  // Reload view list when bridge mutates graph data externally.
+  // Reload view list + relations when bridge mutates graph data externally.
+  // Relations must refresh too: typed edges (blocked-by / relates-to) are derived
+  // from this list, so an external relation write (e.g. from the CLI) won't draw
+  // any edge until the relations here are reloaded.
   useEffect(() => {
     const unsub = window.db.onGraphUpdated?.(() => {
       void graphClient.listViews().then((vs) => {
@@ -630,9 +633,10 @@ export function Graph() {
           return vs[0]?.uuid ?? null
         })
       })
+      void refreshRelations()
     })
     return () => { unsub?.() }
-  }, [])
+  }, [refreshRelations])
 
   async function createView() {
     const v = await graphClient.createView(`View ${views.length + 1}`)

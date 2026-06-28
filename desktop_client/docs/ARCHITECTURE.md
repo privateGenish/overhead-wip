@@ -19,6 +19,13 @@ The **preload script** (`electron/preload.ts`) is the only bridge between them.
 It exposes `window.db.query(ops)` — a single function that sends a batch of
 operations to the main process over IPC and returns a Promise.
 
+### Two doors into the data
+
+The renderer's `window.db.*` path above is **Door 1** — in-process, fully
+trusted, raw SQL. There is also **Door 2**, the *governed bridge*: the single,
+validated entry point for everything *outside* the app (HTTP, the `ovh` CLI, and
+the MCP server). No raw SQL crosses Door 2. See **[BRIDGE.md](BRIDGE.md)**.
+
 ---
 
 ## Data flow: startup

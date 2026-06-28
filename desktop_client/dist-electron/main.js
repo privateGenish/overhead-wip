@@ -4,12 +4,13 @@ import path, { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import fs, { stat, unwatchFile, watch, watchFile, writeFileSync } from "node:fs";
+import fs, { existsSync, stat, unlinkSync, unwatchFile, watch, watchFile, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { lstat, open, readdir, realpath, stat as stat$1 } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { type } from "node:os";
 import { createServer } from "node:http";
+import { createServer as createServer$1 } from "node:net";
 //#region electron/db/sqlite.ts
 var db = null;
 function initSqlite(file) {
@@ -6270,25 +6271,31 @@ var ticketUuidSchema = object({ ticketUuid: string().min(1) });
 /** Symmetric link between two tickets. Order doesn't matter (canonicalized downstream). */
 function relate(input) {
 	const { a, b } = pairSchema.parse(input);
-	return runRelationOp("add", {
+	const result = runRelationOp("add", {
 		type: "relates-to",
 		node_a: a,
 		node_b: b
 	});
+	notifyGraphUpdated();
+	return result;
 }
 /** Marks `blocked` as blocked by `blocker`. */
 function blockBy(input) {
 	const { blocked, blocker } = blockSchema.parse(input);
-	return runRelationOp("add", {
+	const result = runRelationOp("add", {
 		type: "blocked-by",
 		node_a: blocked,
 		node_b: blocker
 	});
+	notifyGraphUpdated();
+	return result;
 }
 /** Removes a relation by its uuid. */
 function unrelate(input) {
 	const { uuid } = uuidSchema.parse(input);
-	return runRelationOp("remove", { uuid });
+	const result = runRelationOp("remove", { uuid });
+	notifyGraphUpdated();
+	return result;
 }
 /** Lists every relation touching a ticket. */
 function listRelations(input) {
@@ -6322,14 +6329,43 @@ var removeNodeSchema = object({
 	ticketUuid: string().min(1)
 });
 var listEdgesSchema = object({ viewUuid: string().min(1) });
+/** The four connection ports a TicketNode exposes (see TicketNode.tsx). */
+var handleSchema = _enum([
+	"left",
+	"right",
+	"top",
+	"bottom"
+]);
 var createEdgeSchema = object({
 	viewUuid: string().min(1),
 	sourceUuid: string().min(1),
 	targetUuid: string().min(1),
-	sourceHandle: string().optional(),
-	targetHandle: string().optional()
+	sourceHandle: handleSchema.optional(),
+	targetHandle: handleSchema.optional()
 });
 var edgeUuidSchema = object({ uuid: string().min(1) });
+var coordSchema = object({
+	x: number(),
+	y: number()
+});
+var deltaSchema = object({
+	dx: number(),
+	dy: number()
+});
+var getNodeSchema = object({
+	viewUuid: string().min(1),
+	ticketUuid: string().min(1)
+});
+var moveNodeSchema = object({
+	viewUuid: string().min(1),
+	ticketUuid: string().min(1),
+	...coordSchema.shape
+});
+var nudgeNodeSchema = object({
+	viewUuid: string().min(1),
+	ticketUuid: string().min(1),
+	...deltaSchema.shape
+});
 function listViews() {
 	return runSql("SELECT uuid, name, created_at FROM graph_views ORDER BY created_at ASC", []);
 }
@@ -6368,7 +6404,76 @@ function deleteView(input) {
 }
 function listViewNodes(input) {
 	const { viewUuid } = listNodesSchema.parse(input);
-	return runSql("SELECT ticket_uuid, x, y FROM graph_view_nodes WHERE view_uuid = ?", [viewUuid]);
+	return runSql(`SELECT n.ticket_uuid, t.id, t.title, t.type, t.status, n.x, n.y
+     FROM graph_view_nodes n
+     JOIN tickets t ON t.uuid = n.ticket_uuid
+     WHERE n.view_uuid = ?
+     ORDER BY t.created_at ASC`, [viewUuid]);
+}
+function getViewNode(input) {
+	const { viewUuid, ticketUuid } = getNodeSchema.parse(input);
+	return runSql(`SELECT n.ticket_uuid, t.id, t.title, t.type, t.status, n.x, n.y
+     FROM graph_view_nodes n
+     JOIN tickets t ON t.uuid = n.ticket_uuid
+     WHERE n.view_uuid = ? AND n.ticket_uuid = ?`, [viewUuid, ticketUuid])[0] ?? null;
+}
+function getViewMap(input) {
+	const { viewUuid } = listNodesSchema.parse(input);
+	const viewRows = runSql("SELECT uuid, name, created_at FROM graph_views WHERE uuid = ?", [viewUuid]);
+	if (!viewRows[0]) throw new Error(`bridge: view "${viewUuid}" not found.`);
+	const nodes = runSql(`SELECT n.ticket_uuid, t.id, t.title, t.type, t.status, n.x, n.y
+     FROM graph_view_nodes n
+     JOIN tickets t ON t.uuid = n.ticket_uuid
+     WHERE n.view_uuid = ?
+     ORDER BY t.created_at ASC`, [viewUuid]);
+	const edges = runSql("SELECT uuid, source_uuid, target_uuid, source_handle, target_handle FROM graph_view_edges WHERE view_uuid = ?", [viewUuid]);
+	return {
+		view: viewRows[0],
+		nodes,
+		edges
+	};
+}
+function moveViewNode(input) {
+	const { viewUuid, ticketUuid, x, y } = moveNodeSchema.parse(input);
+	const existing = getViewNode({
+		viewUuid,
+		ticketUuid
+	});
+	if (!existing) throw new Error(`bridge: node "${ticketUuid}" not found in view "${viewUuid}".`);
+	runSql("UPDATE graph_view_nodes SET x = ?, y = ? WHERE view_uuid = ? AND ticket_uuid = ?", [
+		x,
+		y,
+		viewUuid,
+		ticketUuid
+	]);
+	notifyGraphUpdated();
+	return {
+		...existing,
+		x,
+		y
+	};
+}
+function nudgeViewNode(input) {
+	const { viewUuid, ticketUuid, dx, dy } = nudgeNodeSchema.parse(input);
+	const existing = getViewNode({
+		viewUuid,
+		ticketUuid
+	});
+	if (!existing) throw new Error(`bridge: node "${ticketUuid}" not found in view "${viewUuid}".`);
+	const newX = existing.x + dx;
+	const newY = existing.y + dy;
+	runSql("UPDATE graph_view_nodes SET x = ?, y = ? WHERE view_uuid = ? AND ticket_uuid = ?", [
+		newX,
+		newY,
+		viewUuid,
+		ticketUuid
+	]);
+	notifyGraphUpdated();
+	return {
+		...existing,
+		x: newX,
+		y: newY
+	};
 }
 function addViewNode(input) {
 	const { viewUuid, ticketUuid, x, y } = addNodeSchema.parse(input);
@@ -6451,6 +6556,10 @@ var methods = {
 	listViewNodes,
 	addViewNode,
 	removeViewNode,
+	getViewNode,
+	getViewMap,
+	moveViewNode,
+	nudgeViewNode,
 	listViewEdges,
 	createViewEdge,
 	removeViewEdge
@@ -6466,7 +6575,7 @@ function dispatchBridge(method, args, ctx = {}) {
 	return fn(args);
 }
 //#endregion
-//#region electron/servers/http.ts
+//#region electron/transports/http.ts
 /**
 * Local HTTP server — the first external transport for the governed bridge.
 *
@@ -6485,12 +6594,12 @@ function dispatchBridge(method, args, ctx = {}) {
 *   401 { "error": "Unauthorized" }
 */
 var PORT = 49152;
-var server = null;
+var server$1 = null;
 function json(body) {
 	return JSON.stringify(body);
 }
 function startHttpServer() {
-	server = createServer((req, res) => {
+	server$1 = createServer((req, res) => {
 		res.setHeader("Content-Type", "application/json");
 		if (req.method !== "POST" || req.url !== "/invoke") {
 			res.writeHead(404).end(json({ error: "Not found. Use POST /invoke." }));
@@ -6508,18 +6617,85 @@ function startHttpServer() {
 			}
 		});
 	});
-	server.on("error", (err) => {
+	server$1.on("error", (err) => {
 		if (err.code === "EADDRINUSE") console.warn(`[bridge] port ${PORT} already in use — another instance is running. HTTP transport disabled for this process.`);
 		else console.error("[bridge] HTTP server error:", err);
-		server = null;
+		server$1 = null;
 	});
-	server.listen(PORT, "127.0.0.1", () => {
+	server$1.listen(PORT, "127.0.0.1", () => {
 		console.log(`[bridge] HTTP server listening on 127.0.0.1:${PORT}`);
 	});
 }
 function stopHttpServer() {
+	server$1?.close();
+	server$1 = null;
+}
+//#endregion
+//#region electron/transports/unix.ts
+/**
+* Unix socket transport for the governed bridge (CLI entry point).
+*
+* The app creates a socket at `<userData>/bridge.sock` on startup.
+* The CLI connects, sends one newline-terminated JSON request, receives one
+* newline-terminated JSON response, then disconnects.
+*
+* No token is required — the socket is owned by the current user (mode 0o600),
+* so filesystem permissions serve as the auth boundary.
+*
+* Protocol:
+*   → { "method": "createTicket", "args": { ... } }\n
+*   ← { "result": ... }\n          on success
+*   ← { "error": "..." }\n         on failure
+*/
+var server = null;
+var socketPath = null;
+function startUnixServer(userData) {
+	socketPath = join(userData, "bridge.sock");
+	if (existsSync(socketPath)) try {
+		unlinkSync(socketPath);
+	} catch {}
+	server = createServer$1((socket) => {
+		socket.setEncoding("utf8");
+		let buf = "";
+		socket.on("data", (chunk) => {
+			buf += chunk;
+			const nl = buf.indexOf("\n");
+			if (nl === -1) return;
+			const line = buf.slice(0, nl);
+			buf = buf.slice(nl + 1);
+			let response;
+			try {
+				const req = JSON.parse(line);
+				const result = dispatchBridge(req.method, req.args ?? null, { caller: "unix" });
+				response = JSON.stringify({ result });
+			} catch (err) {
+				response = JSON.stringify({ error: err.message });
+			}
+			socket.end(response + "\n");
+		});
+		socket.on("error", (err) => {
+			console.error("[bridge:unix] socket error:", err);
+		});
+	});
+	server.on("error", (err) => {
+		console.error("[bridge:unix] server error:", err);
+		server = null;
+	});
+	server.listen({
+		path: socketPath,
+		readableAll: false,
+		writableAll: false
+	}, () => {
+		console.log(`[bridge] unix socket at ${socketPath}`);
+	});
+}
+function stopUnixServer() {
 	server?.close();
 	server = null;
+	if (socketPath && existsSync(socketPath)) try {
+		unlinkSync(socketPath);
+	} catch {}
+	socketPath = null;
 }
 //#endregion
 //#region electron/main.ts
@@ -6557,11 +6733,13 @@ app.whenReady().then(() => {
 	registerGraphAPI();
 	initToken(userData);
 	startHttpServer();
+	startUnixServer(userData);
 	createWindow();
 });
 app.on("before-quit", () => {
 	flushHistory();
 	stopHttpServer();
+	stopUnixServer();
 	stopVaultWatcher();
 });
 app.on("window-all-closed", () => {

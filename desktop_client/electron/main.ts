@@ -10,8 +10,9 @@ import { registerHistoryAPI } from './ipc/historyAPI'
 import { registerRelationsAPI } from './ipc/relationsAPI'
 import { registerGraphAPI } from './ipc/graphAPI'
 import { notifyTicketUpdated } from './ipc/notify'
-import { initToken } from './servers/token'
-import { startHttpServer, stopHttpServer } from './servers/http'
+import { initToken } from './transports/token'
+import { startHttpServer, stopHttpServer } from './transports/http'
+import { startUnixServer, stopUnixServer } from './transports/unix'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -57,12 +58,14 @@ app.whenReady().then(() => {
   registerGraphAPI()
   initToken(userData)
   startHttpServer()
+  startUnixServer(userData)
   createWindow()
 })
 
 app.on('before-quit', () => {
   flushHistory()
   stopHttpServer()
+  stopUnixServer()
   void stopVaultWatcher()
 })
 

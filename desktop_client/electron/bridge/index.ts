@@ -16,7 +16,7 @@ import { createTicket, getTicket, listTickets, updateTicket, deleteTicket } from
 import { relate, blockBy, unrelate, listRelations } from './relations'
 import {
   listViews, createView, renameView, deleteView,
-  listViewNodes, addViewNode, removeViewNode,
+  listViewNodes, addViewNode, removeViewNode, getViewNode, getViewMap, moveViewNode, nudgeViewNode,
   listViewEdges, createViewEdge, removeViewEdge,
 } from './views'
 
@@ -38,6 +38,10 @@ const methods = {
   listViewNodes,
   addViewNode,
   removeViewNode,
+  getViewNode,
+  getViewMap,
+  moveViewNode,
+  nudgeViewNode,
   listViewEdges,
   createViewEdge,
   removeViewEdge,

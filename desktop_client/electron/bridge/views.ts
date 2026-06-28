@@ -27,12 +27,28 @@ export interface BridgeViewNode {
   y: number
 }
 
+export interface EnrichedNode {
+  ticket_uuid: string
+  id: string
+  title: string
+  type: string
+  status: string
+  x: number
+  y: number
+}
+
 export interface BridgeViewEdge {
   uuid: string
   source_uuid: string
   target_uuid: string
   source_handle: string | null
   target_handle: string | null
+}
+
+export interface BridgeViewMap {
+  view: BridgeView
+  nodes: EnrichedNode[]
+  edges: BridgeViewEdge[]
 }
 
 // ---------------------------------------------------------------------------
@@ -72,16 +88,46 @@ const listEdgesSchema = z.object({
   viewUuid: z.string().min(1),
 })
 
+/** The four connection ports a TicketNode exposes (see TicketNode.tsx). */
+const handleSchema = z.enum(['left', 'right', 'top', 'bottom'])
+
 const createEdgeSchema = z.object({
   viewUuid: z.string().min(1),
   sourceUuid: z.string().min(1),
   targetUuid: z.string().min(1),
-  sourceHandle: z.string().optional(),
-  targetHandle: z.string().optional(),
+  sourceHandle: handleSchema.optional(),
+  targetHandle: handleSchema.optional(),
 })
 
 const edgeUuidSchema = z.object({
   uuid: z.string().min(1),
+})
+
+const coordSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+})
+
+const deltaSchema = z.object({
+  dx: z.number(),
+  dy: z.number(),
+})
+
+const getNodeSchema = z.object({
+  viewUuid: z.string().min(1),
+  ticketUuid: z.string().min(1),
+})
+
+const moveNodeSchema = z.object({
+  viewUuid: z.string().min(1),
+  ticketUuid: z.string().min(1),
+  ...coordSchema.shape,
+})
+
+const nudgeNodeSchema = z.object({
+  viewUuid: z.string().min(1),
+  ticketUuid: z.string().min(1),
+  ...deltaSchema.shape,
 })
 
 // ---------------------------------------------------------------------------
@@ -123,12 +169,73 @@ export function deleteView(input: unknown): { uuid: string } {
   return { uuid }
 }
 
-export function listViewNodes(input: unknown): BridgeViewNode[] {
+export function listViewNodes(input: unknown): EnrichedNode[] {
   const { viewUuid } = listNodesSchema.parse(input)
   return runSql(
-    'SELECT ticket_uuid, x, y FROM graph_view_nodes WHERE view_uuid = ?',
+    `SELECT n.ticket_uuid, t.id, t.title, t.type, t.status, n.x, n.y
+     FROM graph_view_nodes n
+     JOIN tickets t ON t.uuid = n.ticket_uuid
+     WHERE n.view_uuid = ?
+     ORDER BY t.created_at ASC`,
     [viewUuid],
-  ) as BridgeViewNode[]
+  ) as EnrichedNode[]
+}
+
+export function getViewNode(input: unknown): EnrichedNode | null {
+  const { viewUuid, ticketUuid } = getNodeSchema.parse(input)
+  const rows = runSql(
+    `SELECT n.ticket_uuid, t.id, t.title, t.type, t.status, n.x, n.y
+     FROM graph_view_nodes n
+     JOIN tickets t ON t.uuid = n.ticket_uuid
+     WHERE n.view_uuid = ? AND n.ticket_uuid = ?`,
+    [viewUuid, ticketUuid],
+  ) as EnrichedNode[]
+  return rows[0] ?? null
+}
+
+export function getViewMap(input: unknown): BridgeViewMap {
+  const { viewUuid } = listNodesSchema.parse(input)
+  const viewRows = runSql('SELECT uuid, name, created_at FROM graph_views WHERE uuid = ?', [viewUuid]) as BridgeView[]
+  if (!viewRows[0]) throw new Error(`bridge: view "${viewUuid}" not found.`)
+  const nodes = runSql(
+    `SELECT n.ticket_uuid, t.id, t.title, t.type, t.status, n.x, n.y
+     FROM graph_view_nodes n
+     JOIN tickets t ON t.uuid = n.ticket_uuid
+     WHERE n.view_uuid = ?
+     ORDER BY t.created_at ASC`,
+    [viewUuid],
+  ) as EnrichedNode[]
+  const edges = runSql(
+    'SELECT uuid, source_uuid, target_uuid, source_handle, target_handle FROM graph_view_edges WHERE view_uuid = ?',
+    [viewUuid],
+  ) as BridgeViewEdge[]
+  return { view: viewRows[0], nodes, edges }
+}
+
+export function moveViewNode(input: unknown): EnrichedNode {
+  const { viewUuid, ticketUuid, x, y } = moveNodeSchema.parse(input)
+  const existing = getViewNode({ viewUuid, ticketUuid })
+  if (!existing) throw new Error(`bridge: node "${ticketUuid}" not found in view "${viewUuid}".`)
+  runSql(
+    'UPDATE graph_view_nodes SET x = ?, y = ? WHERE view_uuid = ? AND ticket_uuid = ?',
+    [x, y, viewUuid, ticketUuid],
+  )
+  notifyGraphUpdated()
+  return { ...existing, x, y }
+}
+
+export function nudgeViewNode(input: unknown): EnrichedNode {
+  const { viewUuid, ticketUuid, dx, dy } = nudgeNodeSchema.parse(input)
+  const existing = getViewNode({ viewUuid, ticketUuid })
+  if (!existing) throw new Error(`bridge: node "${ticketUuid}" not found in view "${viewUuid}".`)
+  const newX = existing.x + dx
+  const newY = existing.y + dy
+  runSql(
+    'UPDATE graph_view_nodes SET x = ?, y = ? WHERE view_uuid = ? AND ticket_uuid = ?',
+    [newX, newY, viewUuid, ticketUuid],
+  )
+  notifyGraphUpdated()
+  return { ...existing, x: newX, y: newY }
 }
 
 export function addViewNode(input: unknown): void {
