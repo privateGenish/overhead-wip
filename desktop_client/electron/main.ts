@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, screen } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initSqlite } from './db/sqlite'
@@ -23,9 +23,15 @@ let win: BrowserWindow | null = null
 
 
 function createWindow() {
+  const displays = screen.getAllDisplays()
+  const target = displays[1] ?? displays[0]
+  const { x, y } = target.bounds
+
   win = new BrowserWindow({
     width: 1200,
     height: 800,
+    x: x + Math.round((target.bounds.width - 1200) / 2),
+    y: y + Math.round((target.bounds.height - 800) / 2),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       sandbox: false,

@@ -35,6 +35,18 @@ import { Plus, ChevronDown, Pencil, Trash2 } from 'lucide-react'
 
 const nodeTypes = { ticket: TicketNode }
 
+// Grid bounds — nodes and viewport are constrained to this area.
+const GRID_SIZE = 20
+const GRID_EXTENT = 5000
+const NODE_EXTENT: [[number, number], [number, number]] = [
+  [-GRID_EXTENT, -GRID_EXTENT],
+  [GRID_EXTENT, GRID_EXTENT],
+]
+const TRANSLATE_EXTENT: [[number, number], [number, number]] = [
+  [-GRID_EXTENT - 200, -GRID_EXTENT - 200],
+  [GRID_EXTENT + 200, GRID_EXTENT + 200],
+]
+
 // ---------------------------------------------------------------------------
 // Edge helpers
 // ---------------------------------------------------------------------------
@@ -137,6 +149,7 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
   )
 
   // ---- Load nodes + visual edges from DB on mount / view change ----
+  const [loadKey, setLoadKey] = useState(0)
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -161,7 +174,13 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
     }
     void load()
     return () => { cancelled = true }
-  }, [viewUuid, setNodes, setEdges])
+  }, [viewUuid, loadKey, setNodes, setEdges])
+
+  // ---- Reload when bridge mutates graph data externally ----
+  useEffect(() => {
+    const unsub = window.db.onGraphUpdated?.(() => setLoadKey((k) => k + 1))
+    return () => { unsub?.() }
+  }, [])
 
   // ---- Drop archived/deleted tickets from the canvas live ----
   useEffect(() => {
@@ -182,9 +201,40 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
     const onCanvas = new Set(nodeIdKey ? nodeIdKey.split('|') : [])
     const positions = new Map(getNodes().map((n) => [n.id, n.position]))
     setEdges((prev) => {
+      // Preserve connection ports from any existing edge covering the same pair —
+      // this keeps handles stable across type changes (plain↔typed, relates-to↔blocked-by).
+      // We track the previous source node so we can detect direction flips and swap handles
+      // accordingly (relates-to canonically reorders node_a/node_b by UUID, which can flip
+      // the rendered source/target even though the physical ports should stay the same).
+      const prevByPair = new Map<string, { source: string; sourceHandle?: string; targetHandle?: string }>()
+      for (const e of prev) {
+        const key = pairKey(e.source, e.target)
+        if (!prevByPair.has(key)) {
+          prevByPair.set(key, {
+            source: e.source,
+            sourceHandle: e.sourceHandle ?? undefined,
+            targetHandle: e.targetHandle ?? undefined,
+          })
+        }
+      }
+
       const typed = relations
         .filter((r) => onCanvas.has(r.node_a) && onCanvas.has(r.node_b))
-        .map((r) => typedEdge(r, positions))
+        .map((r) => {
+          const edge = typedEdge(r, positions)
+          const saved = prevByPair.get(pairKey(edge.source, edge.target))
+          if (saved?.sourceHandle && saved?.targetHandle) {
+            if (saved.source === edge.source) {
+              // Same direction — reuse handles directly.
+              return { ...edge, sourceHandle: saved.sourceHandle, targetHandle: saved.targetHandle }
+            } else {
+              // Direction flipped (e.g. canonical reorder) — swap so the same physical
+              // ports on each node are preserved.
+              return { ...edge, sourceHandle: saved.targetHandle, targetHandle: saved.sourceHandle }
+            }
+          }
+          return edge
+        })
       const typedPairs = new Set(typed.map((e) => pairKey(e.source, e.target)))
       const visualKept = prev.filter(
         (e) =>
@@ -202,6 +252,8 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
     edgeId: string
     sourceId: string
     targetId: string
+    sourceHandle?: string
+    targetHandle?: string
     isTyped: boolean
     relationUuid?: string
     relationType?: string
@@ -260,6 +312,8 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
       edgeId: edge.id,
       sourceId: edge.source,
       targetId: edge.target,
+      sourceHandle: edge.sourceHandle ?? undefined,
+      targetHandle: edge.targetHandle ?? undefined,
       isTyped: Boolean(edge.data?.relationUuid),
       relationUuid: edge.data?.relationUuid as string | undefined,
       relationType: edge.data?.relationType as string | undefined,
@@ -276,7 +330,11 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
         if (kind === 'plain') {
           if (isTyped && relationUuid) {
             await relationsClient.remove(relationUuid)
-            const created = await graphClient.createEdge(viewUuid, sourceId, targetId)
+            const { sourceHandle, targetHandle } = edgeMenu
+            const created = await graphClient.createEdge(
+              viewUuid, sourceId, targetId,
+              sourceHandle, targetHandle,
+            )
             setEdges((eds) => [...eds, visualEdge(created)])
           }
         } else if (kind === 'relates-to') {
@@ -392,11 +450,14 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
         onDrop={onDrop}
         onDragOver={onDragOver}
         connectionMode={ConnectionMode.Loose}
-        connectionMode={ConnectionMode.Loose}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
+        snapToGrid
+        snapGrid={[GRID_SIZE, GRID_SIZE]}
+        nodeExtent={NODE_EXTENT}
+        translateExtent={TRANSLATE_EXTENT}
       >
-        <Background />
+        <Background gap={GRID_SIZE} />
         <Controls />
       </ReactFlow>
 
@@ -532,10 +593,24 @@ export function Graph() {
       let vs = await graphClient.listViews()
       if (vs.length === 0) vs = [await graphClient.createView('View 1')]
       setViews(vs)
-      setActiveViewUuid(vs[0].uuid)
+      setActiveViewUuid((cur) => cur ?? vs[0].uuid)
       setRelations(await relationsClient.listAll())
     }
     void init()
+  }, [])
+
+  // Reload view list when bridge mutates graph data externally.
+  useEffect(() => {
+    const unsub = window.db.onGraphUpdated?.(() => {
+      void graphClient.listViews().then((vs) => {
+        setViews(vs)
+        setActiveViewUuid((cur) => {
+          if (cur && vs.some((v) => v.uuid === cur)) return cur
+          return vs[0]?.uuid ?? null
+        })
+      })
+    })
+    return () => { unsub?.() }
   }, [])
 
   async function createView() {

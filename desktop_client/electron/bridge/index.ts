@@ -14,6 +14,11 @@
 import { authorize, throttle, type BridgeContext } from './gate'
 import { createTicket, getTicket, listTickets, updateTicket, deleteTicket } from './tickets'
 import { relate, blockBy, unrelate, listRelations } from './relations'
+import {
+  listViews, createView, renameView, deleteView,
+  listViewNodes, addViewNode, removeViewNode,
+  listViewEdges, createViewEdge, removeViewEdge,
+} from './views'
 
 /** The complete public method surface exposed to external callers. */
 const methods = {
@@ -26,6 +31,16 @@ const methods = {
   blockBy,
   unrelate,
   listRelations,
+  listViews,
+  createView,
+  renameView,
+  deleteView,
+  listViewNodes,
+  addViewNode,
+  removeViewNode,
+  listViewEdges,
+  createViewEdge,
+  removeViewEdge,
 } as const
 
 export type BridgeMethod = keyof typeof methods

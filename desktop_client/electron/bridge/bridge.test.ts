@@ -120,6 +120,84 @@ describe('bridge — relations', () => {
   })
 })
 
+describe('bridge — views', () => {
+  beforeEach(() => {
+    __resetSqliteForTests()
+    initSqlite(':memory:')
+  })
+  afterEach(() => __resetSqliteForTests())
+
+  it('creates a view and lists it', () => {
+    const v = dispatchBridge('createView', { name: 'Sprint board' }) as { uuid: string; name: string }
+    expect(v.uuid).toBeTruthy()
+    expect(v.name).toBe('Sprint board')
+    const all = dispatchBridge('listViews', undefined) as { uuid: string; name: string }[]
+    expect(all).toHaveLength(1)
+    expect(all[0].name).toBe('Sprint board')
+  })
+
+  it('renames a view', () => {
+    const v = dispatchBridge('createView', { name: 'Old' }) as { uuid: string; name: string }
+    const renamed = dispatchBridge('renameView', { uuid: v.uuid, name: 'New' }) as { uuid: string; name: string }
+    expect(renamed.name).toBe('New')
+  })
+
+  it('renameView throws for unknown uuid', () => {
+    expect(() => dispatchBridge('renameView', { uuid: 'nope', name: 'x' })).toThrow('not found')
+  })
+
+  it('deletes a view', () => {
+    const v = dispatchBridge('createView', { name: 'doomed' }) as { uuid: string }
+    dispatchBridge('deleteView', { uuid: v.uuid })
+    expect(dispatchBridge('listViews', undefined)).toHaveLength(0)
+  })
+
+  it('adds, lists, and removes nodes on a view', () => {
+    const v = dispatchBridge('createView', { name: 'v' }) as { uuid: string }
+    const t = create({ title: 'ticket', type: 'Execute' })
+
+    dispatchBridge('addViewNode', { viewUuid: v.uuid, ticketUuid: t.uuid, x: 100, y: 200 })
+    const nodes = dispatchBridge('listViewNodes', { viewUuid: v.uuid }) as { ticket_uuid: string; x: number; y: number }[]
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0]).toMatchObject({ ticket_uuid: t.uuid, x: 100, y: 200 })
+
+    // Upsert same node to new position
+    dispatchBridge('addViewNode', { viewUuid: v.uuid, ticketUuid: t.uuid, x: 300, y: 400 })
+    const updated = dispatchBridge('listViewNodes', { viewUuid: v.uuid }) as { x: number; y: number }[]
+    expect(updated).toHaveLength(1)
+    expect(updated[0]).toMatchObject({ x: 300, y: 400 })
+
+    dispatchBridge('removeViewNode', { viewUuid: v.uuid, ticketUuid: t.uuid })
+    expect(dispatchBridge('listViewNodes', { viewUuid: v.uuid })).toHaveLength(0)
+  })
+
+  it('creates, lists, and removes visual edges on a view', () => {
+    const v = dispatchBridge('createView', { name: 'v' }) as { uuid: string }
+    const a = create({ title: 'a', type: 'Execute' })
+    const b = create({ title: 'b', type: 'Execute' })
+    dispatchBridge('addViewNode', { viewUuid: v.uuid, ticketUuid: a.uuid, x: 0, y: 0 })
+    dispatchBridge('addViewNode', { viewUuid: v.uuid, ticketUuid: b.uuid, x: 200, y: 0 })
+
+    const edge = dispatchBridge('createViewEdge', {
+      viewUuid: v.uuid, sourceUuid: a.uuid, targetUuid: b.uuid,
+      sourceHandle: 'right', targetHandle: 'left',
+    }) as { uuid: string; source_uuid: string; target_uuid: string }
+    expect(edge.uuid).toBeTruthy()
+    expect(edge.source_uuid).toBe(a.uuid)
+
+    const edges = dispatchBridge('listViewEdges', { viewUuid: v.uuid }) as { uuid: string }[]
+    expect(edges).toHaveLength(1)
+
+    dispatchBridge('removeViewEdge', { uuid: edge.uuid })
+    expect(dispatchBridge('listViewEdges', { viewUuid: v.uuid })).toHaveLength(0)
+  })
+
+  it('rejects invalid input', () => {
+    expect(() => dispatchBridge('createView', { name: '' })).toThrow()
+    expect(() => dispatchBridge('addViewNode', { viewUuid: 'x', ticketUuid: 'y', x: 'bad', y: 0 })).toThrow()
+  })
+})
+
 describe('bridge — dispatch', () => {
   beforeEach(() => {
     __resetSqliteForTests()

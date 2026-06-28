@@ -13,3 +13,10 @@ export function notifyTicketUpdated(uuid: string): void {
     window.webContents.send('vault:ticket-updated', uuid)
   }
 }
+
+/** Tells all renderer windows that a graph view/node/edge was mutated externally. */
+export function notifyGraphUpdated(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('graph:updated')
+  }
+}

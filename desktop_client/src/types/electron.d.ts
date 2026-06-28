@@ -26,6 +26,7 @@ declare global {
       relation:     (op: 'add' | 'remove' | 'list' | 'listAll', payload: RelationPayload) => Promise<unknown>
       graph:        (op: string, payload?: unknown) => Promise<unknown>
       onVaultTicketUpdated?: (callback: (ticketUuid: string) => void) => () => void
+      onGraphUpdated?: (callback: () => void) => () => void
     }
   }
 }

@@ -16,4 +16,11 @@ contextBridge.exposeInMainWorld('db', {
       ipcRenderer.removeListener('vault:ticket-updated', listener)
     }
   },
+  onGraphUpdated: (callback: () => void) => {
+    const listener = () => { callback() }
+    ipcRenderer.on('graph:updated', listener)
+    return () => {
+      ipcRenderer.removeListener('graph:updated', listener)
+    }
+  },
 })

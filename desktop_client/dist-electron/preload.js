@@ -15,6 +15,15 @@ contextBridge.exposeInMainWorld("db", {
 		return () => {
 			ipcRenderer.removeListener("vault:ticket-updated", listener);
 		};
+	},
+	onGraphUpdated: (callback) => {
+		const listener = () => {
+			callback();
+		};
+		ipcRenderer.on("graph:updated", listener);
+		return () => {
+			ipcRenderer.removeListener("graph:updated", listener);
+		};
 	}
 });
 //#endregion

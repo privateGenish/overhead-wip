@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain } from "electron";
+import { BrowserWindow, app, ipcMain, screen } from "electron";
 import * as sp from "node:path";
 import path, { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2112,6 +2112,10 @@ function registerGraphAPI() {
 function notifyTicketUpdated(uuid) {
 	for (const window of BrowserWindow.getAllWindows()) window.webContents.send("vault:ticket-updated", uuid);
 }
+/** Tells all renderer windows that a graph view/node/edge was mutated externally. */
+function notifyGraphUpdated() {
+	for (const window of BrowserWindow.getAllWindows()) window.webContents.send("graph:updated");
+}
 /** Generates a token, writes it to `<userData>/bridge.token`, returns the token. */
 function initToken(userData) {
 	const token = randomBytes(32).toString("hex");
@@ -2214,6 +2218,13 @@ function cleanRegex(source) {
 	const end = source.endsWith("$") ? source.length - 1 : source.length;
 	return source.slice(start, end);
 }
+function floatSafeRemainder(val, step) {
+	const ratio = val / step;
+	const roundedRatio = Math.round(ratio);
+	const tolerance = Number.EPSILON * Math.max(Math.abs(ratio), 1);
+	if (Math.abs(ratio - roundedRatio) < tolerance) return 0;
+	return ratio - roundedRatio;
+}
 var EVALUATING = /* @__PURE__ */ Symbol("evaluating");
 function defineLazy(object, key, getter) {
 	let value = void 0;
@@ -2315,7 +2326,13 @@ function optionalKeys(shape) {
 		return shape[k]._zod.optin === "optional" && shape[k]._zod.optout === "optional";
 	});
 }
-Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, -Number.MAX_VALUE, Number.MAX_VALUE;
+var NUMBER_FORMAT_RANGES = {
+	safeint: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+	int32: [-2147483648, 2147483647],
+	uint32: [0, 4294967295],
+	float32: [-34028234663852886e22, 34028234663852886e22],
+	float64: [-Number.MAX_VALUE, Number.MAX_VALUE]
+};
 function pick(schema, mask) {
 	const currDef = schema._zod.def;
 	const checks = currDef.checks;
@@ -2718,6 +2735,8 @@ var string$1 = (params) => {
 	const regex = params ? `[\\s\\S]{${params?.minimum ?? 0},${params?.maximum ?? ""}}` : `[\\s\\S]*`;
 	return new RegExp(`^${regex}$`);
 };
+var integer = /^-?\d+$/;
+var number$1 = /^-?\d+(?:\.\d+)?$/;
 var boolean$1 = /^(?:true|false)$/i;
 var lowercase = /^[^A-Z]*$/;
 var uppercase = /^[^a-z]*$/;
@@ -2728,6 +2747,145 @@ var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
 	inst._zod ?? (inst._zod = {});
 	inst._zod.def = def;
 	(_a = inst._zod).onattach ?? (_a.onattach = []);
+});
+var numericOriginMap = {
+	number: "number",
+	bigint: "bigint",
+	object: "date"
+};
+var $ZodCheckLessThan = /* @__PURE__ */ $constructor("$ZodCheckLessThan", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const origin = numericOriginMap[typeof def.value];
+	inst._zod.onattach.push((inst) => {
+		const bag = inst._zod.bag;
+		const curr = (def.inclusive ? bag.maximum : bag.exclusiveMaximum) ?? Number.POSITIVE_INFINITY;
+		if (def.value < curr) if (def.inclusive) bag.maximum = def.value;
+		else bag.exclusiveMaximum = def.value;
+	});
+	inst._zod.check = (payload) => {
+		if (def.inclusive ? payload.value <= def.value : payload.value < def.value) return;
+		payload.issues.push({
+			origin,
+			code: "too_big",
+			maximum: typeof def.value === "object" ? def.value.getTime() : def.value,
+			input: payload.value,
+			inclusive: def.inclusive,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckGreaterThan = /* @__PURE__ */ $constructor("$ZodCheckGreaterThan", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const origin = numericOriginMap[typeof def.value];
+	inst._zod.onattach.push((inst) => {
+		const bag = inst._zod.bag;
+		const curr = (def.inclusive ? bag.minimum : bag.exclusiveMinimum) ?? Number.NEGATIVE_INFINITY;
+		if (def.value > curr) if (def.inclusive) bag.minimum = def.value;
+		else bag.exclusiveMinimum = def.value;
+	});
+	inst._zod.check = (payload) => {
+		if (def.inclusive ? payload.value >= def.value : payload.value > def.value) return;
+		payload.issues.push({
+			origin,
+			code: "too_small",
+			minimum: typeof def.value === "object" ? def.value.getTime() : def.value,
+			input: payload.value,
+			inclusive: def.inclusive,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckMultipleOf = /* @__PURE__ */ $constructor("$ZodCheckMultipleOf", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	inst._zod.onattach.push((inst) => {
+		var _a;
+		(_a = inst._zod.bag).multipleOf ?? (_a.multipleOf = def.value);
+	});
+	inst._zod.check = (payload) => {
+		if (typeof payload.value !== typeof def.value) throw new Error("Cannot mix number and bigint in multiple_of check.");
+		if (typeof payload.value === "bigint" ? payload.value % def.value === BigInt(0) : floatSafeRemainder(payload.value, def.value) === 0) return;
+		payload.issues.push({
+			origin: typeof payload.value,
+			code: "not_multiple_of",
+			divisor: def.value,
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckNumberFormat = /* @__PURE__ */ $constructor("$ZodCheckNumberFormat", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	def.format = def.format || "float64";
+	const isInt = def.format?.includes("int");
+	const origin = isInt ? "int" : "number";
+	const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
+	inst._zod.onattach.push((inst) => {
+		const bag = inst._zod.bag;
+		bag.format = def.format;
+		bag.minimum = minimum;
+		bag.maximum = maximum;
+		if (isInt) bag.pattern = integer;
+	});
+	inst._zod.check = (payload) => {
+		const input = payload.value;
+		if (isInt) {
+			if (!Number.isInteger(input)) {
+				payload.issues.push({
+					expected: origin,
+					format: def.format,
+					code: "invalid_type",
+					continue: false,
+					input,
+					inst
+				});
+				return;
+			}
+			if (!Number.isSafeInteger(input)) {
+				if (input > 0) payload.issues.push({
+					input,
+					code: "too_big",
+					maximum: Number.MAX_SAFE_INTEGER,
+					note: "Integers must be within the safe integer range.",
+					inst,
+					origin,
+					inclusive: true,
+					continue: !def.abort
+				});
+				else payload.issues.push({
+					input,
+					code: "too_small",
+					minimum: Number.MIN_SAFE_INTEGER,
+					note: "Integers must be within the safe integer range.",
+					inst,
+					origin,
+					inclusive: true,
+					continue: !def.abort
+				});
+				return;
+			}
+		}
+		if (input < minimum) payload.issues.push({
+			origin: "number",
+			input,
+			code: "too_small",
+			minimum,
+			inclusive: true,
+			inst,
+			continue: !def.abort
+		});
+		if (input > maximum) payload.issues.push({
+			origin: "number",
+			input,
+			code: "too_big",
+			maximum,
+			inclusive: true,
+			inst,
+			continue: !def.abort
+		});
+	};
 });
 var $ZodCheckMaxLength = /* @__PURE__ */ $constructor("$ZodCheckMaxLength", (inst, def) => {
 	var _a;
@@ -3349,6 +3507,30 @@ var $ZodJWT = /* @__PURE__ */ $constructor("$ZodJWT", (inst, def) => {
 			continue: !def.abort
 		});
 	};
+});
+var $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.pattern = inst._zod.bag.pattern ?? number$1;
+	inst._zod.parse = (payload, _ctx) => {
+		if (def.coerce) try {
+			payload.value = Number(payload.value);
+		} catch (_) {}
+		const input = payload.value;
+		if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) return payload;
+		const received = typeof input === "number" ? Number.isNaN(input) ? "NaN" : !Number.isFinite(input) ? "Infinity" : void 0 : void 0;
+		payload.issues.push({
+			expected: "number",
+			code: "invalid_type",
+			input,
+			inst,
+			...received ? { received } : {}
+		});
+		return payload;
+	};
+});
+var $ZodNumberFormat = /* @__PURE__ */ $constructor("$ZodNumberFormat", (inst, def) => {
+	$ZodCheckNumberFormat.init(inst, def);
+	$ZodNumber.init(inst, def);
 });
 var $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
 	$ZodType.init(inst, def);
@@ -4382,6 +4564,24 @@ function _isoDuration(Class, params) {
 	});
 }
 /* @__NO_SIDE_EFFECTS__ */
+function _number(Class, params) {
+	return new Class({
+		type: "number",
+		checks: [],
+		...normalizeParams(params)
+	});
+}
+/* @__NO_SIDE_EFFECTS__ */
+function _int(Class, params) {
+	return new Class({
+		type: "number",
+		check: "number_format",
+		abort: false,
+		format: "safeint",
+		...normalizeParams(params)
+	});
+}
+/* @__NO_SIDE_EFFECTS__ */
 function _boolean(Class, params) {
 	return new Class({
 		type: "boolean",
@@ -4397,6 +4597,50 @@ function _never(Class, params) {
 	return new Class({
 		type: "never",
 		...normalizeParams(params)
+	});
+}
+/* @__NO_SIDE_EFFECTS__ */
+function _lt(value, params) {
+	return new $ZodCheckLessThan({
+		check: "less_than",
+		...normalizeParams(params),
+		value,
+		inclusive: false
+	});
+}
+/* @__NO_SIDE_EFFECTS__ */
+function _lte(value, params) {
+	return new $ZodCheckLessThan({
+		check: "less_than",
+		...normalizeParams(params),
+		value,
+		inclusive: true
+	});
+}
+/* @__NO_SIDE_EFFECTS__ */
+function _gt(value, params) {
+	return new $ZodCheckGreaterThan({
+		check: "greater_than",
+		...normalizeParams(params),
+		value,
+		inclusive: false
+	});
+}
+/* @__NO_SIDE_EFFECTS__ */
+function _gte(value, params) {
+	return new $ZodCheckGreaterThan({
+		check: "greater_than",
+		...normalizeParams(params),
+		value,
+		inclusive: true
+	});
+}
+/* @__NO_SIDE_EFFECTS__ */
+function _multipleOf(value, params) {
+	return new $ZodCheckMultipleOf({
+		check: "multiple_of",
+		...normalizeParams(params),
+		value
 	});
 }
 /* @__NO_SIDE_EFFECTS__ */
@@ -4869,6 +5113,26 @@ var stringProcessor = (schema, ctx, _json, _params) => {
 			pattern: regex.source
 		}))];
 	}
+};
+var numberProcessor = (schema, ctx, _json, _params) => {
+	const json = _json;
+	const { minimum, maximum, format, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
+	if (typeof format === "string" && format.includes("int")) json.type = "integer";
+	else json.type = "number";
+	const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
+	const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
+	const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
+	if (exMin) if (legacy) {
+		json.minimum = exclusiveMinimum;
+		json.exclusiveMinimum = true;
+	} else json.exclusiveMinimum = exclusiveMinimum;
+	else if (typeof minimum === "number") json.minimum = minimum;
+	if (exMax) if (legacy) {
+		json.maximum = exclusiveMaximum;
+		json.exclusiveMaximum = true;
+	} else json.exclusiveMaximum = exclusiveMaximum;
+	else if (typeof maximum === "number") json.maximum = maximum;
+	if (typeof multipleOf === "number") json.multipleOf = multipleOf;
 };
 var booleanProcessor = (_schema, _ctx, json, _params) => {
 	json.type = "boolean";
@@ -5433,6 +5697,74 @@ var ZodJWT = /* @__PURE__ */ $constructor("ZodJWT", (inst, def) => {
 	$ZodJWT.init(inst, def);
 	ZodStringFormat.init(inst, def);
 });
+var ZodNumber = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
+	$ZodNumber.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => numberProcessor(inst, ctx, json, params);
+	_installLazyMethods(inst, "ZodNumber", {
+		gt(value, params) {
+			return this.check(/* @__PURE__ */ _gt(value, params));
+		},
+		gte(value, params) {
+			return this.check(/* @__PURE__ */ _gte(value, params));
+		},
+		min(value, params) {
+			return this.check(/* @__PURE__ */ _gte(value, params));
+		},
+		lt(value, params) {
+			return this.check(/* @__PURE__ */ _lt(value, params));
+		},
+		lte(value, params) {
+			return this.check(/* @__PURE__ */ _lte(value, params));
+		},
+		max(value, params) {
+			return this.check(/* @__PURE__ */ _lte(value, params));
+		},
+		int(params) {
+			return this.check(int(params));
+		},
+		safe(params) {
+			return this.check(int(params));
+		},
+		positive(params) {
+			return this.check(/* @__PURE__ */ _gt(0, params));
+		},
+		nonnegative(params) {
+			return this.check(/* @__PURE__ */ _gte(0, params));
+		},
+		negative(params) {
+			return this.check(/* @__PURE__ */ _lt(0, params));
+		},
+		nonpositive(params) {
+			return this.check(/* @__PURE__ */ _lte(0, params));
+		},
+		multipleOf(value, params) {
+			return this.check(/* @__PURE__ */ _multipleOf(value, params));
+		},
+		step(value, params) {
+			return this.check(/* @__PURE__ */ _multipleOf(value, params));
+		},
+		finite() {
+			return this;
+		}
+	});
+	const bag = inst._zod.bag;
+	inst.minValue = Math.max(bag.minimum ?? Number.NEGATIVE_INFINITY, bag.exclusiveMinimum ?? Number.NEGATIVE_INFINITY) ?? null;
+	inst.maxValue = Math.min(bag.maximum ?? Number.POSITIVE_INFINITY, bag.exclusiveMaximum ?? Number.POSITIVE_INFINITY) ?? null;
+	inst.isInt = (bag.format ?? "").includes("int") || Number.isSafeInteger(bag.multipleOf ?? .5);
+	inst.isFinite = true;
+	inst.format = bag.format ?? null;
+});
+function number(params) {
+	return /* @__PURE__ */ _number(ZodNumber, params);
+}
+var ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def) => {
+	$ZodNumberFormat.init(inst, def);
+	ZodNumber.init(inst, def);
+});
+function int(params) {
+	return /* @__PURE__ */ _int(ZodNumberFormat, params);
+}
 var ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
 	$ZodBoolean.init(inst, def);
 	ZodType.init(inst, def);
@@ -5964,6 +6296,130 @@ function listRelations(input) {
 	return runRelationOp("list", { ticketUuid });
 }
 //#endregion
+//#region electron/bridge/views.ts
+/**
+* Governed graph-view methods for the bridge (Door 2).
+*
+* Lets external callers (LLM, CLI, MCP) create/manage graph views and place
+* tickets on the canvas. Each method validates its own input with Zod, then
+* routes through runSql so the same DB path is used as the renderer's IPC.
+*/
+var createViewSchema = object({ name: string().min(1) });
+var viewUuidSchema = object({ uuid: string().min(1) });
+var renameViewSchema = object({
+	uuid: string().min(1),
+	name: string().min(1)
+});
+var listNodesSchema = object({ viewUuid: string().min(1) });
+var addNodeSchema = object({
+	viewUuid: string().min(1),
+	ticketUuid: string().min(1),
+	x: number(),
+	y: number()
+});
+var removeNodeSchema = object({
+	viewUuid: string().min(1),
+	ticketUuid: string().min(1)
+});
+var listEdgesSchema = object({ viewUuid: string().min(1) });
+var createEdgeSchema = object({
+	viewUuid: string().min(1),
+	sourceUuid: string().min(1),
+	targetUuid: string().min(1),
+	sourceHandle: string().optional(),
+	targetHandle: string().optional()
+});
+var edgeUuidSchema = object({ uuid: string().min(1) });
+function listViews() {
+	return runSql("SELECT uuid, name, created_at FROM graph_views ORDER BY created_at ASC", []);
+}
+function createView(input) {
+	const { name } = createViewSchema.parse(input);
+	const uuid = randomUUID();
+	const created_at = Date.now();
+	runSql("INSERT INTO graph_views (uuid, name, created_at) VALUES (?, ?, ?)", [
+		uuid,
+		name,
+		created_at
+	]);
+	notifyGraphUpdated();
+	return {
+		uuid,
+		name,
+		created_at
+	};
+}
+function renameView(input) {
+	const { uuid, name } = renameViewSchema.parse(input);
+	const rows = runSql("SELECT uuid, name, created_at FROM graph_views WHERE uuid = ?", [uuid]);
+	if (!rows[0]) throw new Error(`bridge: view "${uuid}" not found.`);
+	runSql("UPDATE graph_views SET name = ? WHERE uuid = ?", [name, uuid]);
+	notifyGraphUpdated();
+	return {
+		...rows[0],
+		name
+	};
+}
+function deleteView(input) {
+	const { uuid } = viewUuidSchema.parse(input);
+	runSql("DELETE FROM graph_views WHERE uuid = ?", [uuid]);
+	notifyGraphUpdated();
+	return { uuid };
+}
+function listViewNodes(input) {
+	const { viewUuid } = listNodesSchema.parse(input);
+	return runSql("SELECT ticket_uuid, x, y FROM graph_view_nodes WHERE view_uuid = ?", [viewUuid]);
+}
+function addViewNode(input) {
+	const { viewUuid, ticketUuid, x, y } = addNodeSchema.parse(input);
+	runSql(`INSERT INTO graph_view_nodes (view_uuid, ticket_uuid, x, y)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(view_uuid, ticket_uuid) DO UPDATE SET x = excluded.x, y = excluded.y`, [
+		viewUuid,
+		ticketUuid,
+		x,
+		y
+	]);
+	notifyGraphUpdated();
+}
+function removeViewNode(input) {
+	const { viewUuid, ticketUuid } = removeNodeSchema.parse(input);
+	runSql("DELETE FROM graph_view_nodes WHERE view_uuid = ? AND ticket_uuid = ?", [viewUuid, ticketUuid]);
+	notifyGraphUpdated();
+}
+function listViewEdges(input) {
+	const { viewUuid } = listEdgesSchema.parse(input);
+	return runSql("SELECT uuid, source_uuid, target_uuid, source_handle, target_handle FROM graph_view_edges WHERE view_uuid = ?", [viewUuid]);
+}
+function createViewEdge(input) {
+	const { viewUuid, sourceUuid, targetUuid, sourceHandle, targetHandle } = createEdgeSchema.parse(input);
+	const uuid = randomUUID();
+	const sh = sourceHandle ?? null;
+	const th = targetHandle ?? null;
+	runSql("INSERT INTO graph_view_edges (uuid, view_uuid, source_uuid, target_uuid, source_handle, target_handle) VALUES (?, ?, ?, ?, ?, ?)", [
+		uuid,
+		viewUuid,
+		sourceUuid,
+		targetUuid,
+		sh,
+		th
+	]);
+	notifyGraphUpdated();
+	return {
+		uuid,
+		source_uuid: sourceUuid,
+		target_uuid: targetUuid,
+		source_handle: sh,
+		target_handle: th
+	};
+}
+function removeViewEdge(input) {
+	const { uuid } = edgeUuidSchema.parse(input);
+	runSql("DELETE FROM graph_view_edges WHERE uuid = ?", [uuid]);
+	notifyGraphUpdated();
+	return { uuid };
+}
+//#endregion
 //#region electron/bridge/index.ts
 /**
 * The governed bridge (Door 2).
@@ -5987,7 +6443,17 @@ var methods = {
 	relate,
 	blockBy,
 	unrelate,
-	listRelations
+	listRelations,
+	listViews,
+	createView,
+	renameView,
+	deleteView,
+	listViewNodes,
+	addViewNode,
+	removeViewNode,
+	listViewEdges,
+	createViewEdge,
+	removeViewEdge
 };
 /**
 * Runs a bridge method through the gate. Single entry point for every caller
@@ -6063,9 +6529,14 @@ var VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 var RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 var win = null;
 function createWindow() {
+	const displays = screen.getAllDisplays();
+	const target = displays[1] ?? displays[0];
+	const { x, y } = target.bounds;
 	win = new BrowserWindow({
 		width: 1200,
 		height: 800,
+		x: x + Math.round((target.bounds.width - 1200) / 2),
+		y: y + Math.round((target.bounds.height - 800) / 2),
 		webPreferences: {
 			preload: path.join(__dirname, "preload.js"),
 			sandbox: false
