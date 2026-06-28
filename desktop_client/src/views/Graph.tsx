@@ -19,8 +19,8 @@ import '@xyflow/react/dist/style.css'
 import { graphClient } from '@/lib/graphClient'
 import { relationsClient } from '@/lib/relationsClient'
 import { useTickets, ticketStore } from '@/lib/ticketStore'
-import { findComponents } from '@/lib/relationsGraph'
 import { layoutCluster } from '@/lib/graphLayout'
+import { TICKET_TYPES } from '@/shared/types/ticketOptions'
 import type { GraphView, GraphViewEdge, TicketRelation } from '@/types/electron'
 import { TicketNode } from '@/components/graph/TicketNode'
 import { Button } from '@/components/ui/button'
@@ -129,9 +129,10 @@ interface CanvasProps {
   viewUuid: string
   relations: TicketRelation[]
   refreshRelations: () => Promise<void>
+  onNodeIdsChange: (ids: Set<string>) => void
 }
 
-function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
+function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: CanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const { screenToFlowPosition, getNodes } = useReactFlow()
@@ -191,6 +192,11 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
     })
   }, [activeIdKey, activeTickets, setNodes])
 
+  // ---- Report canvas node IDs to parent so sidebar can filter them out ----
+  useEffect(() => {
+    onNodeIdsChange(new Set(nodes.map((n) => n.id)))
+  }, [nodeIdKey, nodes, onNodeIdsChange])
+
   // ---- Reconcile typed edges whenever relations or canvas membership change.
   // Single source of truth: `edges` state holds both visual edges (data.visualId)
   // and derived typed edges (data.relationUuid). Visual edges are preserved across
@@ -246,6 +252,23 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
       return [...visualKept, ...typed]
     })
   }, [relations, nodeIdKey, setEdges, getNodes])
+
+  // ---- Node context menu ----
+  const [nodeMenu, setNodeMenu] = useState<{ nodeId: string; x: number; y: number } | null>(null)
+  const closeNodeMenu = () => setNodeMenu(null)
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault()
+    setNodeMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+  }, [])
+
+  const removeNodeFromBoard = useCallback(async () => {
+    if (!nodeMenu) return
+    const { nodeId } = nodeMenu
+    closeNodeMenu()
+    try { await graphClient.removeNode(viewUuid, nodeId) } catch { /* */ }
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+  }, [nodeMenu, viewUuid, setNodes])
 
   // ---- Edge type menu ----
   const [edgeMenu, setEdgeMenu] = useState<{
@@ -446,7 +469,8 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
         onEdgesDelete={onEdgesDelete}
         onNodeDragStop={onNodeDragStop}
         onNodesDelete={onNodesDelete}
-        onPaneClick={closeEdgeMenu}
+        onNodeContextMenu={onNodeContextMenu}
+        onPaneClick={() => { closeEdgeMenu(); closeNodeMenu() }}
         onDrop={onDrop}
         onDragOver={onDragOver}
         connectionMode={ConnectionMode.Loose}
@@ -460,6 +484,19 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
         <Background gap={GRID_SIZE} />
         <Controls />
       </ReactFlow>
+
+      {nodeMenu && (
+        <div style={{ position: 'fixed', left: nodeMenu.x, top: nodeMenu.y, zIndex: 1000 }}>
+          <div className="bg-popover border rounded-md shadow-md p-1 flex flex-col gap-0.5 min-w-36">
+            <button className="text-sm px-2 py-1 rounded hover:bg-accent text-left text-destructive" onClick={() => void removeNodeFromBoard()}>
+              Remove from board
+            </button>
+            <button className="text-sm px-2 py-1 rounded hover:bg-accent text-left text-muted-foreground" onClick={closeNodeMenu}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {edgeMenu && (
         <div style={{ position: 'fixed', left: edgeMenu.x, top: edgeMenu.y, zIndex: 1000 }}>
@@ -491,13 +528,21 @@ function Canvas({ viewUuid, relations, refreshRelations }: CanvasProps) {
 // Tickets sidebar tab
 // ---------------------------------------------------------------------------
 
-function TicketsSidebar() {
+function TicketsSidebar({ canvasNodeIds }: { canvasNodeIds: Set<string> }) {
   const tickets = useTickets()
   const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
+
+  const toggleType = (t: string) =>
+    setTypeFilter((prev) => { const next = new Set(prev); next.has(t) ? next.delete(t) : next.add(t); return next })
+
   const q = search.toLowerCase()
-  const filtered = tickets.filter(
-    (t) => t.title.toLowerCase().includes(q) || t.id.toLowerCase().includes(q),
-  )
+  const filtered = tickets.filter((t) => {
+    if (canvasNodeIds.has(t.uuid)) return false
+    if (typeFilter.size > 0 && !typeFilter.has(t.type)) return false
+    if (q && !t.title.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) return false
+    return true
+  })
 
   return (
     <div className="flex flex-col gap-2 h-full">
@@ -507,6 +552,24 @@ function TicketsSidebar() {
         onChange={(e) => setSearch(e.target.value)}
         className="h-7 text-sm"
       />
+
+      {/* Type filter chips */}
+      <div className="flex flex-wrap gap-1">
+        {TICKET_TYPES.map((t) => (
+          <button
+            key={t}
+            onClick={() => toggleType(t)}
+            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+              typeFilter.has(t)
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-transparent text-muted-foreground border-border hover:border-foreground hover:text-foreground'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto flex flex-col gap-1">
         {filtered.map((ticket) => (
           <div
@@ -519,7 +582,8 @@ function TicketsSidebar() {
             className="flex items-center gap-2 px-2 py-1.5 rounded-md border bg-card hover:bg-accent cursor-grab text-sm"
           >
             <span className="font-mono text-xs text-muted-foreground shrink-0">{ticket.id}</span>
-            <span className="truncate">{ticket.title}</span>
+            <span className="truncate flex-1">{ticket.title}</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">{ticket.type}</span>
           </div>
         ))}
       </div>
@@ -528,49 +592,6 @@ function TicketsSidebar() {
 }
 
 // ---------------------------------------------------------------------------
-// Relations sidebar tab
-// ---------------------------------------------------------------------------
-
-function RelationsSidebar({ relations }: { relations: TicketRelation[] }) {
-  const tickets = useTickets()
-  const nonArchivedUuids = useMemo(() => new Set(tickets.map((t) => t.uuid)), [tickets])
-  const clusters = useMemo(
-    () => findComponents(relations, nonArchivedUuids),
-    [relations, nonArchivedUuids],
-  )
-
-  if (clusters.length === 0) {
-    return <p className="text-xs text-muted-foreground">No relation clusters yet.</p>
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto flex flex-col gap-2">
-      {clusters.map((uuids, i) => (
-        <div
-          key={i}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData('application/ovh-cluster', JSON.stringify(uuids))
-            e.dataTransfer.effectAllowed = 'move'
-          }}
-          className="border rounded-md px-2 py-1.5 bg-card hover:bg-accent cursor-grab"
-        >
-          <div className="flex flex-wrap gap-1">
-            {uuids.map((uuid) => {
-              const t = ticketStore.getByUuid(uuid)
-              return (
-                <span key={uuid} className="font-mono text-xs text-muted-foreground">
-                  {t?.id ?? uuid.slice(0, 6)}
-                </span>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Graph root
 // ---------------------------------------------------------------------------
@@ -579,7 +600,7 @@ export function Graph() {
   const [views, setViews] = useState<GraphView[]>([])
   const [activeViewUuid, setActiveViewUuid] = useState<string | null>(null)
   const [relations, setRelations] = useState<TicketRelation[]>([])
-  const [sidebarTab, setSidebarTab] = useState<'tickets' | 'relations'>('tickets')
+  const [canvasNodeIds, setCanvasNodeIds] = useState<Set<string>>(new Set())
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
@@ -700,7 +721,7 @@ export function Graph() {
         <div className="flex-1 relative">
           {activeView ? (
             <ReactFlowProvider>
-              <Canvas key={activeView.uuid} viewUuid={activeView.uuid} relations={relations} refreshRelations={refreshRelations} />
+              <Canvas key={activeView.uuid} viewUuid={activeView.uuid} relations={relations} refreshRelations={refreshRelations} onNodeIdsChange={setCanvasNodeIds} />
             </ReactFlowProvider>
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading…</div>
@@ -708,24 +729,8 @@ export function Graph() {
         </div>
 
         <div className="w-56 border-l bg-background flex flex-col shrink-0 overflow-hidden">
-          <div className="flex border-b">
-            <button
-              className={`flex-1 text-sm py-1.5 ${sidebarTab === 'tickets' ? 'font-medium border-b-2 border-foreground' : 'text-muted-foreground'}`}
-              onClick={() => setSidebarTab('tickets')}
-            >
-              Tickets
-            </button>
-            <button
-              className={`flex-1 text-sm py-1.5 ${sidebarTab === 'relations' ? 'font-medium border-b-2 border-foreground' : 'text-muted-foreground'}`}
-              onClick={() => setSidebarTab('relations')}
-            >
-              Relations
-            </button>
-          </div>
           <div className="flex-1 overflow-hidden p-2">
-            {sidebarTab === 'tickets'
-              ? <TicketsSidebar />
-              : <RelationsSidebar relations={relations} />}
+            <TicketsSidebar canvasNodeIds={canvasNodeIds} />
           </div>
         </div>
       </div>
