@@ -1,26 +1,28 @@
-import { contextBridge as e, ipcRenderer as t } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 //#region electron/preload.ts
-e.exposeInMainWorld("db", {
-	query: (e, n) => t.invoke("db:query", e, n ?? []),
-	ticket: (e, n) => t.invoke("db:ticket", e, n ?? []),
-	history: (e) => t.invoke("db:history", e),
-	historyFlush: (e) => t.invoke("db:history:flush", e),
-	relation: (e, n) => t.invoke("db:relation", e, n),
-	graph: (e, n) => t.invoke("db:graph", e, n ?? {}),
-	onVaultTicketUpdated: (e) => {
-		let n = (t, n) => {
-			e(n);
+contextBridge.exposeInMainWorld("db", {
+	query: (sql, params) => ipcRenderer.invoke("db:query", sql, params ?? []),
+	ticket: (sql, params) => ipcRenderer.invoke("db:ticket", sql, params ?? []),
+	history: (ticketUuid) => ipcRenderer.invoke("db:history", ticketUuid),
+	historyFlush: (ticketUuid) => ipcRenderer.invoke("db:history:flush", ticketUuid),
+	relation: (op, payload) => ipcRenderer.invoke("db:relation", op, payload),
+	graph: (op, payload) => ipcRenderer.invoke("db:graph", op, payload ?? {}),
+	onVaultTicketUpdated: (callback) => {
+		const listener = (_event, ticketUuid) => {
+			callback(ticketUuid);
 		};
-		return t.on("vault:ticket-updated", n), () => {
-			t.removeListener("vault:ticket-updated", n);
+		ipcRenderer.on("vault:ticket-updated", listener);
+		return () => {
+			ipcRenderer.removeListener("vault:ticket-updated", listener);
 		};
 	},
-	onGraphUpdated: (e) => {
-		let n = () => {
-			e();
+	onGraphUpdated: (callback) => {
+		const listener = () => {
+			callback();
 		};
-		return t.on("graph:updated", n), () => {
-			t.removeListener("graph:updated", n);
+		ipcRenderer.on("graph:updated", listener);
+		return () => {
+			ipcRenderer.removeListener("graph:updated", listener);
 		};
 	}
 });
