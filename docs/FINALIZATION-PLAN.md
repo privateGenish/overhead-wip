@@ -51,7 +51,7 @@ Three passes, in order. **We are in Pass 1.**
 | Pass | What happens | Status |
 |---|---|---|
 | **1 — Shaping** | Walk every feature. For each: what it is today (grounded in the code), how it *should* be, what needs fixing. | ✅ **Complete** — 37 shaped, 1 deferred |
-| **2 — Compliance** | Re-iterate the shaped features and attach the architectural/technical rules the implementing agent must follow. | ⚪ Not started |
+| **2 — Compliance** | Re-iterate the shaped features and attach the architectural/technical rules the implementing agent must follow. | 🔵 Drafted — awaiting review |
 | **3 — Build** | Agentic implementation, sub-branch per unit, stop-and-verify at each merge. | ⚪ Not started |
 
 Per-feature template used below:
@@ -1051,7 +1051,287 @@ Typing five characters = five blocking SQL statements and five whole-file writes
 
 # Pass 2 — Code compliance
 
-_Not started. Filled after Pass 1 completes._
+Architectural and technical rules the implementing agent must follow. Organized in layers: **Layer 0** is foundational and must be built first — everything else depends on it.
+
+> **How to read this:** rules marked **MUST** are binding. **SHOULD** is a strong default that may be varied with a stated reason. **MUST NOT** marks a mistake that has already been considered and rejected — do not reintroduce it.
+
+---
+
+## Layer 0 — Foundations
+
+### 0.1 Storage model — a directory per project
+
+**DECIDED: Option B.** Each project owns a directory containing its own database and its own vault. A small global database sits alongside them.
+
+```
+<userData>/
+  global.db                      account · theme · active project · project registry
+  projects/
+    <project-uuid>/
+      overhead.db                tickets, relations, graphs, notes, mentions, settings
+      vault/                     that project's markdown mirror
+        OVH-001.md
+```
+
+**Why this and not a `project_uuid` column on every table:**
+
+- The existing boot path already parameterizes all three subsystems by path — `initSqlite(path)`, `initVault(dir)`, `initVaultWatcher(dir)` — and `sqlite.ts` / `vaultManager.ts` both already export `__reset*ForTests()`. Teardown-and-reinit is a supported path, not a new capability.
+- **Every existing SQL statement stays untouched.** The database a connection points at *is* the project, so there is no filtering to add — and none to forget. A shared-table design would require editing every query in the app and would leak across projects the first time one was missed.
+- **Isolation becomes structural rather than disciplinary.** Cross-project access is impossible, not merely discouraged. Pass 1 states no cross-project communication is foreseeable in any scope; this makes that guarantee free.
+- Per-project vault directories fall out naturally — explicitly required in **A3**.
+- Delete a project = remove a directory. Back one up = copy a directory.
+
+**Rules**
+- **MUST NOT** add a `project_uuid` column to any table inside a project database. The directory *is* the scope.
+- **MUST NOT** open two project databases simultaneously. One active project, one connection.
+- **MUST** name project directories by **uuid**, never by display name — names are renameable, uuids are not.
+
+### 0.2 `global.db` schema
+
+The only state that lives outside a project.
+
+```sql
+CREATE TABLE projects (
+  uuid       TEXT PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  prefix     TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+-- keys: account.name · account.avatar · theme · activeProject
+```
+
+**Rules**
+- **MUST** enforce unique project names at the schema level (**A3**), not only in the UI. `COLLATE NOCASE` so "Overhead" and "overhead" collide.
+- **SHOULD** enforce unique prefixes too — duplicate prefixes make `@OVH-123` mentions ambiguous to a human reading two projects' vaults side by side.
+- **MUST** treat `prefix` as **immutable after creation**. Changing it strands every existing ticket id and every markdown mention. Enforce in the API, not just the UI.
+- **MUST** store `activeProject` here — it is the pointer that selects which project database to open, so it cannot live inside one.
+
+### 0.3 Project database schema
+
+The existing seven tables, unchanged in shape, plus this round's additions.
+
+```sql
+-- tickets: one new column
+ALTER TABLE tickets ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;   -- C1
+
+CREATE TABLE notes (                                                 -- B10
+  uuid       TEXT PRIMARY KEY,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE mentions (                                              -- C10
+  source_type  TEXT NOT NULL CHECK(source_type IN ('ticket','note')),
+  source_uuid  TEXT NOT NULL,
+  target_uuid  TEXT NOT NULL REFERENCES tickets(uuid) ON DELETE CASCADE,
+  PRIMARY KEY (source_type, source_uuid, target_uuid)
+);
+CREATE INDEX idx_mentions_target ON mentions(target_uuid);
+```
+
+**Rules**
+- **MUST** derive the `mentions` table entirely from document content — it is a **projection, never a source of truth**. Rebuilding it from scratch by re-parsing every ticket and note must always be safe and produce identical results.
+- **MUST** delete a note's mention rows when the note is deleted. `source_uuid` cannot use a foreign key because it spans two tables; handle it explicitly.
+- **SHOULD** add a `schema_version` row now. *(Recommended against the "fresh start" decision, which only settles that today's data is disposable — it does not help the next schema change, which arrives once the app holds real work. Nearly free while the schema is being rewritten; expensive to retrofit.)*
+- **MUST NOT** carry over the ad-hoc `try { ALTER TABLE … } catch {}` blocks in `sqlite.ts`. They exist only to patch databases that are being discarded.
+
+### 0.4 Boot and project-switch lifecycle
+
+This is the highest-risk code in the round. A half-torn-down project leaves a **watcher writing into the wrong database**.
+
+**Boot**
+```
+app.whenReady()
+  ├── requestSingleInstanceLock()        MUST — bail if not acquired
+  ├── open global.db
+  ├── read activeProject
+  │     └── none, or its directory is missing → projects launcher, no project opened
+  ├── openProject(uuid)                  see below
+  ├── register IPC + bridge + transports (project-independent)
+  └── createWindow() with restored bounds
+```
+
+**`openProject(uuid)` / `closeProject()` — teardown order is binding**
+
+```
+closeProject():
+  1. flush pending debounced writes      (C3)
+  2. flush pending history snapshots     (flushHistory)
+  3. await stopVaultWatcher()            MUST await — chokidar close is async
+  4. close the SQLite connection
+  5. clear in-memory caches (vault lastPaths map, stores)
+
+openProject(uuid):
+  1. initSqlite(projects/<uuid>/overhead.db)
+  2. initVault(projects/<uuid>/vault)
+  3. initVaultWatcher(vaultDir, notifyTicketUpdated)
+  4. write activeProject to global.db
+  5. notify renderer: full reload
+```
+
+**Rules**
+- **MUST** `await stopVaultWatcher()` before closing the database. It is already async and already awaited in `before-quit`; switching must not be sloppier than quitting.
+- **MUST** flush before tearing down, in the order above — writes before snapshots, or history records stale text (**C3**/**C7**).
+- **MUST** clear `vaultManager`'s `lastPaths` map on close. It is module-level state keyed by uuid; carrying it across projects would delete the wrong files.
+- **MUST** acquire the single-instance lock (**A1**/**E1**). Two instances would contend over the same database, socket and watcher.
+- **MUST** handle a missing project directory gracefully — a deleted or moved folder must land on the launcher, not crash on boot.
+- **SHOULD** implement switching as `closeProject()` then `openProject()` with no shared path, so there is one lifecycle to reason about rather than two.
+
+### 0.5 Fresh start
+
+- **MUST** back up `overhead.db` and `vault/` before the first destructive step, even though the data is declared disposable. It costs nothing and the decision is irreversible.
+- **MUST** confirm with Yoav immediately before executing, not merely because it was agreed in planning.
+- **MUST NOT** write migration code for the old single-workspace schema. It is being discarded.
+
+---
+
+## Layer 1 — Cross-cutting mechanisms
+
+### 1.1 Routing and deep links (A1, A4, B9, C5)
+
+**Route model.** Routing today is two opaque `useState`s. It must become a single serializable value that both the UI and a URL can produce.
+
+```ts
+type Route =
+  | { kind: 'page';   page: 'home'|'product'|'explore'|'execute'|'backlog'|'all'|'graph'|'notes' }
+  | { kind: 'ticket'; uuid: string }
+  | { kind: 'note';   uuid: string }
+  | { kind: 'view';   viewUuid: string }        // a named graph view
+  | { kind: 'overlay'; overlay: 'settings'|'archived'|'projects' }
+```
+
+**Link scheme — `overhead://project/<project-uuid>/…`**, project identified by **uuid, not name**. Names are renameable; uuids are not, so links survive a rename.
+
+```
+overhead://project/<project-uuid>/ticket/OVH-123
+overhead://project/<project-uuid>/page/execute
+overhead://project/<project-uuid>/view/<view-uuid>
+overhead://project/<project-uuid>/note/<note-uuid>
+```
+
+**Rules**
+- **MUST NOT** persist the active route across restarts (**A1**) — only the active *project* persists.
+- **MUST** switch project first if an incoming link names a different one, using the full `closeProject`/`openProject` lifecycle, *then* apply the route.
+- **MUST** handle links on both a cold start (`process.argv` / `open-url`) and a running instance (`second-instance`, `open-url`).
+- **MUST** resolve tickets in links by **human id** (`OVH-123`), not uuid — a deep link a person might type or paste should use the id they can see.
+- **MUST** fail gracefully: unknown project, unknown ticket, or malformed URL lands somewhere sensible with a message, never a crash or a blank screen.
+- **SHOULD NOT** add a router library. A single `Route` value in app state, plus a parser and a serializer, covers every requirement here.
+
+### 1.2 Debounced persistence (C3)
+
+**Rules**
+- **MUST** keep model mutations synchronous and in-memory. `setDescription` updates and notifies immediately; only the **write** is deferred.
+- **MUST** place the debounce at the **persistence boundary** (store/client layer). **MUST NOT** put timing logic inside `Ticket` — the model does not own policy.
+- **MUST** key the debounce per ticket uuid, mirroring the existing per-uuid timer map in `ticketAPI.ts`.
+- **MUST** expose `flush(uuid)` and `flushAll()`, and call them at: **edit→view toggle · ticket switch · unmount · window blur · project close · before-quit**.
+- **MUST** flush the pending write **before** triggering a history snapshot. Reversed, history records stale text.
+- **SHOULD** use 300–500ms, consistent with `SettingEditor`'s existing 500ms.
+- **MUST NOT** debounce only `vaultWrite` and leave SQL eager — considered and rejected as too narrow.
+
+### 1.3 Editor control (C3)
+
+- **MUST** replace the compound-`key` remount with `editor.commands.setContent(next, false)` and `editor.setEditable(editing)`.
+- **MUST** guard `setContent` against the editor's current markdown, or every external notify clobbers the cursor mid-typing.
+- **MUST NOT** convert the editor to a controlled `value`/`onChange` component — it fights ProseMirror's document model.
+
+### 1.4 Notifications (E6)
+
+- **MUST** keep the coarse broadcast model — it is adequate at single-user volumes.
+- **MUST** make every new mutating path fire a notification (notes, pin, delete, project switch), or external changes will not appear live.
+- **MUST** treat project switch as a **full renderer invalidation**, not a per-view reload.
+- **MUST NOT** deliver a notification generated by a project that is no longer active.
+
+### 1.5 Bridge project scoping (D1)
+
+- **MUST** scope every bridge method to the active project implicitly. **MUST NOT** add a project parameter to the 23 existing methods.
+- **SHOULD** include the acting project's uuid in every bridge **response**, so a caller can detect that the user switched projects mid-task rather than silently corrupting the wrong one.
+- **MUST** fail cleanly when no project is open (launcher state) rather than throwing an opaque "SQLite not initialised".
+
+### 1.6 Settings access (E5)
+
+- **MUST** keep two distinct stores: `global.db/app_settings` and each project's `settings` table.
+- **SHOULD** provide typed accessors with a defaults registry rather than raw string keys — the key count roughly doubles this round and untyped `settingGet('visoin.body')` fails silently.
+- **MUST** move `counter` and `vision.*` into per-project settings; `theme` and `account.*` into global.
+
+---
+
+## Layer 2 — Feature-specific rules
+
+### 2.1 Mentions and backlinks (C10)
+
+- **MUST** serialize to plain `@OVH-123` in markdown. It must stay readable and editable in a plain text editor, since the vault is the interchange format.
+- **MUST** re-extract mentions on **inbound vault edits** as well as in-app typing, or externally-edited files desync the projection.
+- **MUST** resolve mentions within the active project only.
+- **MUST** store backlinks but **MUST NOT** build any read UI this round (**C10** — data now, presentation later).
+- **SHOULD** tolerate mentions of ids that do not exist — a typo or a deleted ticket must not break rendering or extraction.
+
+### 2.2 Notes (B10)
+
+- **MUST** be titled markdown documents, project-scoped, vault-mirrored like tickets.
+- **SHOULD** mirror into a `vault/notes/` subdirectory to avoid filename collisions with `OVH-###.md`.
+- **MUST** participate in mention extraction as a `source_type` of `'note'`.
+- **MUST NOT** appear in the ⌘K palette (**A4** is active tickets only).
+
+### 2.3 Graph (B9)
+
+- **MUST** extend `getViewMap` to return **one unified edge list**, each edge carrying `type: 'blocked-by' | 'relates-to' | 'visual'`.
+- **MUST NOT** materialize relations into `graph_view_edges`. Relations remain the single source of truth; the unification is at the read surface only.
+- **MUST** keep `blocked-by` directional — it encodes "what comes before what", the reason the graph feature exists.
+- **SHOULD** apply the same unification to `listViewEdges`, or document explicitly why it stays the raw visual-edge accessor.
+
+### 2.4 Deletion (C8, B7)
+
+- **MUST** expose permanent single-ticket delete **only** from the Archived view. Archive is the required first step.
+- **MUST** cascade: relations, history, graph nodes/edges, **and mentions** (the new table — the others already have `ON DELETE CASCADE`).
+- **MUST** confirm destructively before deleting.
+
+### 2.5 Ticket creation (C5)
+
+- **MUST** have `ticketStore.create()` **return the created ticket** and accept full initial state (title, type, description, backlog, pinned).
+- **MUST NOT** locate the new ticket by taking the last element of the store snapshot — that is the existing bug.
+- **MUST** apply the `backlog` flag the form collects — currently dropped silently.
+
+### 2.6 Search (A4)
+
+- **MUST** scope to active, non-archived tickets in the active project; match on **title and id** only.
+- **MUST NOT** search descriptions or bodies this round.
+- **SHOULD** reuse the existing `cmdk` dependency and `ui/command.tsx` rather than adding a library.
+
+---
+
+## Layer 3 — Standards
+
+### 3.1 Binding constraints from Pass 1
+
+- **MUST NOT** add priority, assignee, due dates, tags, or labels — to any model, view, form, or bridge method. Rejected explicitly; not to be reintroduced "for completeness".
+- **MUST NOT** add ticket hierarchy or any feature that infers, suggests, or enforces work order. The developer plans; the agent follows.
+- **MUST NOT** build the real FocusCard (**B1**) or a Kanban (**B3–B6**). Both deferred by decision. Ship `pinned` without a consumer.
+
+### 3.2 Code patterns
+
+- **MUST** keep raw SQL confined to `ticketClient` / `relationsClient` and their new siblings (notes, mentions). No SQL in components.
+- **MUST** follow the existing injection patterns — `TicketHost` for mutations, static hooks for creation. The model layer does not import storage.
+- **SHOULD** match surrounding style: private `#fields`, Zod at boundaries, `useSyncExternalStore` for subscriptions.
+
+### 3.3 Verification
+
+- **MUST** get `tsc -b` green **before** feature work. Nothing else is verifiable while the build is red.
+- **MUST** add React component tests (jsdom + Testing Library under the existing Vitest) covering the main views.
+- **MUST** test the risky new logic specifically: debounce flush ordering, project switch teardown/re-init, mention round-trip through the vault, watcher behaviour under the new write cadence.
+- **MUST** keep the existing 75 tests passing.
+
+### 3.4 Documentation
+
+- **MUST** update `ARCHITECTURE.md`, `BRIDGE.md`, `SECURITY-renderer-raw-sql.md`, `docs/ticket.md`. All four describe the pre-projects architecture. `ARCHITECTURE.md` is **already stale** — it documents a `localDB`/`batch.ts` path that no longer matches the raw-SQL client code.
+- **MUST** verify and update the "rich text is sanitized" precondition in the security doc (**E3**) — it is listed as unverified and matters more once mentions add a render path.
+- **SHOULD** regenerate TypeDoc after the API settles.
 
 ---
 
