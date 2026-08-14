@@ -1,4 +1,3 @@
-import * as React from 'react'
 import { type Column } from '@tanstack/react-table'
 import { Check, PlusCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -36,35 +35,37 @@ export function DataTableFacetedFilter<TData, TValue>({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 border-dashed">
-          <PlusCircle />
-          {title}
-          {selectedValues?.size > 0 && (
-            <>
-              <Separator orientation="vertical" className="mx-2 h-4" />
-              <Badge variant="secondary" className="rounded-sm px-1 font-normal lg:hidden">
-                {selectedValues.size}
-              </Badge>
-              <div className="hidden gap-1 lg:flex">
-                {selectedValues.size > 2 ? (
-                  <Badge variant="secondary" className="rounded-sm px-1 font-normal">
-                    {selectedValues.size} selected
-                  </Badge>
-                ) : (
-                  options
-                    .filter((o) => selectedValues.has(o.value))
-                    .map((o) => (
-                      <Badge key={o.value} variant="secondary" className="rounded-sm px-1 font-normal">
-                        {o.label}
-                      </Badge>
-                    ))
-                )}
-              </div>
-            </>
-          )}
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button variant="outline" size="sm" className="h-8 border-dashed">
+            <PlusCircle />
+            {title}
+            {selectedValues?.size > 0 && (
+              <>
+                <Separator orientation="vertical" className="mx-2 h-4" />
+                <Badge variant="secondary" className="rounded-sm px-1 font-normal lg:hidden">
+                  {selectedValues.size}
+                </Badge>
+                <div className="hidden gap-1 lg:flex">
+                  {selectedValues.size > 2 ? (
+                    <Badge variant="secondary" className="rounded-sm px-1 font-normal">
+                      {selectedValues.size} selected
+                    </Badge>
+                  ) : (
+                    options
+                      .filter((o) => selectedValues.has(o.value))
+                      .map((o) => (
+                        <Badge key={o.value} variant="secondary" className="rounded-sm px-1 font-normal">
+                          {o.label}
+                        </Badge>
+                      ))
+                  )}
+                </div>
+              </>
+            )}
+          </Button>
+        }
+      />
       <PopoverContent className="w-[200px] p-0" align="start">
         <Command>
           <CommandInput placeholder={title} />

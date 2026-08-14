@@ -12,7 +12,7 @@ import {
   type Node,
   type Edge,
   type Connection,
-  type NodeMouseHandler,
+  type OnNodeDrag,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
@@ -395,7 +395,7 @@ function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: Canv
   )
 
   // ---- Persist node position on drag stop ----
-  const onNodeDragStop: NodeMouseHandler = useCallback(
+  const onNodeDragStop: OnNodeDrag = useCallback(
     async (_event, node) => {
       try { await graphClient.upsertNode(viewUuid, node.id, node.position.x, node.position.y) } catch { /* */ }
     },
@@ -695,11 +695,13 @@ export function Graph() {
                 </button>
               )}
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="p-0.5 rounded hover:bg-accent text-muted-foreground">
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                </DropdownMenuTrigger>
+                <DropdownMenuTrigger
+                  render={
+                    <button className="p-0.5 rounded hover:bg-accent text-muted-foreground">
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  }
+                />
                 <DropdownMenuContent align="start" className="w-32">
                   <DropdownMenuItem onClick={() => { setRenameId(v.uuid); setRenameValue(v.name) }}>
                     <Pencil className="h-3.5 w-3.5" /> Rename

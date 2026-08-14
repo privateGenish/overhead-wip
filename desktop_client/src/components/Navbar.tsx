@@ -54,11 +54,13 @@ export function Navbar({ active, onSelect }: NavbarProps) {
           Notes
         </button>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline">
-              <IconUser /> Project Name
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="outline">
+                <IconUser /> Project Name
+              </Button>
+            }
+          />
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onClick={() => onSelect('Archived')}>
               <Archive className="h-4 w-4" />

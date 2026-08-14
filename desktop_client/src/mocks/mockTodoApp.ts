@@ -12,6 +12,7 @@ export const mockTicketData: TicketData[] = [
     type: 'Explore',
     status: { value: 'Open' },
     backlog: false,
+    archived: false,
     description:
       '# Pick a stack\n\nDecide the foundation for the Mock Todo App.\n\n- Frontend framework\n- Persistence approach\n- Build tooling',
   },
@@ -22,6 +23,7 @@ export const mockTicketData: TicketData[] = [
     type: 'Explore',
     status: { value: 'Open' },
     backlog: false,
+    archived: false,
     description: 'Rough out the main screens before building anything.',
   },
   {
@@ -31,6 +33,7 @@ export const mockTicketData: TicketData[] = [
     type: 'Explore',
     status: { value: 'Open' },
     backlog: true,
+    archived: false,
     description: '',
   },
   {
@@ -40,6 +43,7 @@ export const mockTicketData: TicketData[] = [
     type: 'Feature',
     status: { value: 'Idea' },
     backlog: false,
+    archived: false,
     description:
       '## Todo CRUD\n\nThe core feature: create, complete, and delete todos.',
   },
@@ -50,6 +54,7 @@ export const mockTicketData: TicketData[] = [
     type: 'Feature',
     status: { value: 'Idea' },
     backlog: true,
+    archived: false,
     description: '',
   },
   {
@@ -59,6 +64,7 @@ export const mockTicketData: TicketData[] = [
     type: 'Execute',
     status: { value: 'Draft' },
     backlog: false,
+    archived: false,
     description: '',
   },
   {
@@ -68,6 +74,7 @@ export const mockTicketData: TicketData[] = [
     type: 'Execute',
     status: { value: 'Draft' },
     backlog: false,
+    archived: false,
     description: '',
   },
 ]
