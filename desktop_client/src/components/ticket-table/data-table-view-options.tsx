@@ -13,12 +13,14 @@ import {
 export function DataTableViewOptions<TData>({ table }: { table: Table<TData> }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8">
-          <Settings2 />
-          View
-        </Button>
-      </DropdownMenuTrigger>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="h-8">
+            <Settings2 />
+            View
+          </Button>
+        }
+      />
       <DropdownMenuContent align="end" className="w-[150px]">
         <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
         <DropdownMenuSeparator />

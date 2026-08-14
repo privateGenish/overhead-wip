@@ -163,14 +163,16 @@ export function CreateTicketPanel({ fixedType }: CreateTicketPanelProps) {
       <div className="flex items-center gap-2 px-5 py-3 border-t">
         {/* Type */}
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Badge
-              variant="outline"
-              className="cursor-pointer hover:bg-accent text-xs font-normal"
-            >
-              {type || 'Type'}
-            </Badge>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={
+              <Badge
+                variant="outline"
+                className="cursor-pointer hover:bg-accent text-xs font-normal"
+              >
+                {type || 'Type'}
+              </Badge>
+            }
+          />
           <DropdownMenuContent>
             {TICKET_TYPES.map((t) => (
               <DropdownMenuItem

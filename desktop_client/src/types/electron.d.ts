@@ -15,6 +15,7 @@ type RelationPayload =
   | { type: RelationType; node_a: string; node_b: string }
   | { uuid: string }
   | { ticketUuid: string }
+  | Record<string, never> // listAll takes no payload
 
 declare global {
   interface Window {

@@ -17,12 +17,14 @@ interface DataTableRowActionsProps<TData> {
 export function DataTableRowActions<TData>({ row: _row }: DataTableRowActionsProps<TData>) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8 data-[state=open]:bg-muted">
-          <MoreHorizontal />
-          <span className="sr-only">Open menu</span>
-        </Button>
-      </DropdownMenuTrigger>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="icon" className="size-8 data-[state=open]:bg-muted">
+            <MoreHorizontal />
+            <span className="sr-only">Open menu</span>
+          </Button>
+        }
+      />
       <DropdownMenuContent align="end" className="w-[160px]">
         <DropdownMenuItem>Edit</DropdownMenuItem>
         <DropdownMenuSeparator />
