@@ -11,6 +11,7 @@ import { loadTickets } from './tickets'
 import { ticketClient } from './ticketClient'
 import { generalClient } from './generalClient'
 import { Counter } from './counter'
+import { persistQueue } from './persistQueue'
 
 const factories = {
   Execute: ExecuteTicket,
@@ -32,13 +33,29 @@ export class TicketStore {
 
   constructor() {
     // Wire the ticket model's service hooks — persistence lives behind these.
+    // Creates and deletes write eagerly; only mutations are debounced, since
+    // those are what a burst of typing produces.
     Ticket.setCreateHook((ticket) => ticketClient.upsert(ticket.toJSON()))
-    Ticket.setSaveHook((ticket) => ticketClient.upsert(ticket.toJSON()))
-    Ticket.setDeleteHook((ticket) => ticketClient.delete(ticket.uuid))
+    Ticket.setSaveHook(async (ticket) => {
+      persistQueue.schedule(ticket.uuid, () => ticketClient.upsert(ticket.toJSON()))
+    })
+    Ticket.setDeleteHook(async (ticket) => {
+      // Drop any queued write first — it would resurrect the row after DELETE.
+      await persistQueue.cancel(ticket.uuid)
+      await ticketClient.delete(ticket.uuid)
+    })
     Ticket.setGenerateIdHook(() => Counter.next())
     window.db.onVaultTicketUpdated?.((uuid) => {
       void this.syncFromStorage(uuid)
     })
+
+    // Last line of defence for the debounce window: quitting mid-edit must not
+    // drop the pending write. These can't await, but ipcRenderer.invoke posts
+    // the message synchronously, so the main process still receives it.
+    const flushOnExit = () => { void persistQueue.flushAll() }
+    window.addEventListener('beforeunload', flushOnExit)
+    window.addEventListener('pagehide', flushOnExit)
+
     void this.#hydrate()
   }
 
@@ -109,6 +126,10 @@ export class TicketStore {
   async setTicketType(ticket: Ticket, type: TicketType): Promise<Ticket> {
     if (ticket.type === type) return ticket
 
+    // Land any queued edit before swapping instances — once replaced, the old
+    // instance is detached and a late write would persist stale fields.
+    await persistQueue.flush(ticket.uuid)
+
     const data = {
       ...ticket.toJSON(),
       type,
@@ -122,6 +143,9 @@ export class TicketStore {
   }
 
   async syncFromStorage(uuid: string): Promise<void> {
+    // Same reason as setTicketType: flush before the instance is replaced.
+    await persistQueue.flush(uuid)
+
     const data = await ticketClient.get(uuid)
     const existing = this.getByUuid(uuid)
 
@@ -145,6 +169,7 @@ export class TicketStore {
 
   async deleteAll(): Promise<void> {
     for (const ticket of this.#tickets) this.#untrack(ticket)
+    for (const ticket of this.#tickets) await persistQueue.cancel(ticket.uuid)
     await ticketClient.deleteAll()
     await generalClient.settingDelete('counter')
     this.#tickets = []

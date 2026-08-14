@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
+import type { EditorInstance } from 'novel'
 import { Markdown } from 'tiptap-markdown'
 import { Archive, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTicket } from '@/lib/ticketStore'
+import { persistQueue } from '@/lib/persistQueue'
 import { Switch } from '@/components/ui/switch'
 import { TicketControlBar } from '@/components/TicketControlBar'
 import { TicketHistory } from '@/components/TicketHistory'
@@ -32,13 +34,17 @@ const SIDE_MIN = 160
 const SIDE_MAX = 480
 const SIDE_DEFAULT = 240
 
+/** Reads the editor's current document back as markdown. */
+function editorMarkdown(editor: EditorInstance): string {
+  return (editor.storage.markdown as { getMarkdown: () => string }).getMarkdown()
+}
+
 export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
   const [editing, setEditing] = useState(false) // default: View (read-only)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [editorKey, setEditorKey] = useState(0)
+  const [editor, setEditor] = useState<EditorInstance | null>(null)
   const [sideWidth, setSideWidth] = useState(SIDE_DEFAULT)
   const dragging = useRef(false)
-  const previousTicketRef = useRef(ticket)
 
   const onDividerMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -60,18 +66,46 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
     window.addEventListener('mouseup', onMouseUp)
   }, [sideWidth])
   useTicket(ticket) // re-render when this ticket mutates
-  const contentKey = editing ? 'editing' : ticket.description
 
+  // Push external changes (vault sync, restore) into the live editor instead of
+  // remounting it — a remount discards cursor, selection and undo history.
+  // The guard matters: without it every notify would reset the caret mid-typing.
   useEffect(() => {
-    if (previousTicketRef.current === ticket) return
-    previousTicketRef.current = ticket
-    setEditorKey((key) => key + 1)
-  }, [ticket])
+    if (!editor) return
+    if (editorMarkdown(editor) === ticket.description) return
+    editor.commands.setContent(ticket.description, false)
+  }, [editor, ticket.description])
+
+  // Mode toggling is a property of the same instance, not a reason to rebuild it.
+  useEffect(() => {
+    editor?.setEditable(editing)
+  }, [editor, editing])
+
+  /** Lands the queued description write, then snapshots. Order matters —
+   *  reversed, history would record the previous text. */
+  const commit = useCallback(async () => {
+    await persistQueue.flush(ticket.uuid)
+    await window.db.historyFlush(ticket.uuid)
+  }, [ticket.uuid])
+
+  // Flush on unmount and when switching to another ticket, so a pending edit
+  // can't be stranded by navigating away.
+  useEffect(() => {
+    return () => { void persistQueue.flush(ticket.uuid) }
+  }, [ticket.uuid])
+
+  // Leaving the window is a natural commit point too.
+  useEffect(() => {
+    const onBlur = () => { void persistQueue.flushAll() }
+    window.addEventListener('blur', onBlur)
+    return () => window.removeEventListener('blur', onBlur)
+  }, [])
 
   function handleRestore(description: string) {
     ticket.setDescription(description)
-    void window.db.historyFlush(ticket.uuid) // snapshot the restored version immediately
-    setEditorKey((k) => k + 1) // force Novel editor to remount with new content
+    // The content effect above pushes this into the editor; snapshot after the
+    // restored text has actually been written.
+    void commit()
   }
 
   return (
@@ -105,7 +139,7 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
             variant="outline"
             size="sm"
             onClick={() => {
-              if (editing) void window.db.historyFlush(ticket.uuid)
+              if (editing) void commit()
               setEditing((e) => !e)
             }}
           >
@@ -120,19 +154,19 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <EditorRoot>
             <EditorContent
-              // Remount on ticket change or mode toggle — reloads content
-              // (latest markdown) and applies the new editable state.
-              key={`${ticket.uuid}:${editing}:${editorKey}:${contentKey}`}
+              // Keyed on identity only. Content and editable state are driven
+              // imperatively by the effects above, so typing no longer rebuilds
+              // the editor on every keystroke.
+              key={ticket.uuid}
               extensions={extensions}
               editable={editing}
               onCreate={({ editor }) => {
                 editor.commands.setContent(ticket.description, false)
+                editor.setEditable(editing)
+                setEditor(editor)
               }}
               onUpdate={({ editor }) => {
-                const markdown = (
-                  editor.storage.markdown as { getMarkdown: () => string }
-                ).getMarkdown()
-                ticket.setDescription(markdown)
+                ticket.setDescription(editorMarkdown(editor))
               }}
               editorProps={{
                 attributes: { class: 'ticket-prose focus:outline-none' },
