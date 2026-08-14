@@ -51,8 +51,8 @@ Three passes, in order. **We are in Pass 1.**
 | Pass | What happens | Status |
 |---|---|---|
 | **1 — Shaping** | Walk every feature. For each: what it is today (grounded in the code), how it *should* be, what needs fixing. | ✅ **Complete** — 37 shaped, 1 deferred |
-| **2 — Compliance** | Re-iterate the shaped features and attach the architectural/technical rules the implementing agent must follow. | 🔵 Drafted — awaiting review |
-| **3 — Build** | Agentic implementation, sub-branch per unit, stop-and-verify at each merge. | ⚪ Not started |
+| **2 — Compliance** | Re-iterate the shaped features and attach the architectural/technical rules the implementing agent must follow. | ✅ **Complete** |
+| **3 — Build** | Agentic implementation, sub-branch per unit, stop-and-verify at each merge. | 🔵 **Sequenced — 13 units, ready to start** |
 
 Per-feature template used below:
 
@@ -1335,6 +1335,66 @@ overhead://project/<project-uuid>/note/<note-uuid>
 
 ---
 
-# Pass 3 — Build log
+# Pass 3 — Build sequencing
 
-_Not started._
+## Working method
+
+- **Branch per unit**, cut from `finalizing`: `finalizing/<nn>-<slug>`. Merge back into `finalizing` only after its verification gate passes.
+- **Stop and verify at every merge.** No unit begins before the previous one is reviewed and merged. `master` stays untouched until the whole round holds.
+- **A unit is done when its gate passes** — not when the code is written.
+
+**Every unit's gate includes these, plus its own:**
+1. `npx tsc -b` clean
+2. `npx vitest run` — all tests pass, including the pre-existing 75
+3. The app launches and the touched surface works in the real Electron shell
+
+---
+
+## Unit order
+
+Dependencies drive the sequence. Units 1–3 are foundational; 4 onwards mostly parallel in principle but should still land one at a time for reviewability.
+
+| # | Unit | Scope | Depends on | Gate beyond the standard three |
+|---|---|---|---|---|
+| **1** | **Green build + hygiene** | Fix the ~15 `tsc` errors (**E8**). Remove the stale `.claude/worktrees/kind-joliot-40c7c0`. Confirm root `node_modules/` intent. | — | `npm run build` produces a package. This is the first time that's been true. |
+| **2** | **Test infrastructure** | jsdom + Testing Library under existing Vitest. One real component test as proof. | 1 | A component test runs and fails correctly when the component breaks. |
+| **3** | **Persistence + editor** | Debounced writes with flush contract, `setContent`/`setEditable` instead of remount (**C3**, §1.2–1.3). | 2 | Typing does **not** produce a write per keystroke (verify by log/counter). Cursor and undo survive an external update. Flush-before-snapshot proven by test. |
+| **4** | **Project foundations** ⚠️ | `global.db`, per-project directories, fresh-start schema incl. `pinned`/`notes`/`mentions`, boot + switch lifecycle (**A3**, §0.1–0.5). | 3 | Switching projects twice leaves **no** watcher on the old vault and no stale `lastPaths`. Missing project directory lands on the launcher, not a crash. |
+| **5** | **Project UI** | Launcher screen, navbar "Projects" item, active project name, create/rename/delete, unique-name enforcement (**A2**, **A3**). | 4 | Duplicate name rejected at the DB layer, not just the form. Delete removes the directory. |
+| **6** | **Routing, deep links, window** | `Route` model, `overhead://` protocol handler, single-instance lock, persisted window bounds (**A1**, **E1**, §1.1). | 5 | A link opens the right ticket **cold and warm**, and cross-project links switch first. Second launch focuses the existing window. |
+| **7** | **Ticket system fixes** | `create()` returns the ticket + applies backlog + opens it (**C5**), pin toggle in control bar (**C4**), backlog hidden on all views (**C2**/**B6**), archived inline search + delete (**B7**/**C8**), history display cap of 50 (**C7**). | 6 | Backlog flag actually persists. Delete cascades relations, history, graph rows **and mentions**. |
+| **8** | **Notes** | Model, storage, `vault/notes/` mirroring, grid view, editor (**B10**). | 7 | A note round-trips through the vault unchanged. |
+| **9** | **Mentions + backlinks** | TipTap mention extension, `@OVH-123` serialization, extraction on typing **and** inbound vault edits, `mentions` projection (**C10**). | 8 | Rebuilding `mentions` from scratch yields identical rows. Unknown ids don't break rendering. No read UI shipped. |
+| **10** | **Search palette** | ⌘K, fuzzy over title + id, active tickets only (**A4**). | 6 | Opens by shortcut, selecting navigates to the ticket. |
+| **11** | **Agent surfaces** | Unified typed edges in `getViewMap` (**B9**), `getProjectContext` (**D6**), HTTP token enforcement (**D2**), throttling (**D1**), project uuid in responses, node click-to-open, CLI + MCP updates (**D4**/**D5**). | 9 | An MCP client reads a graph and sees `blocked-by`/`relates-to`/`visual` in one list. Unauthenticated HTTP is **rejected**. |
+| **12** | **Settings, theme, Vision** | Account section, remove Notifications, theme toggle in General (**B8**, **E7**), Vision restyle (**B2**), font inconsistency resolved. | 11 | Light mode verified usable — it has never been switchable before. |
+| **13** | **Docs + final pass** | Update `ARCHITECTURE.md`, `BRIDGE.md`, `SECURITY-renderer-raw-sql.md`, `docs/ticket.md`. Verify the rich-text sanitization precondition (**E3**). Regenerate TypeDoc. | 12 | No doc describes the pre-projects architecture. Sanitization claim is verified, not assumed. |
+
+---
+
+## ⚠️ Unit 4 — destructive step
+
+Unit 4 discards all existing data (**E2**, §0.5).
+
+- **MUST** copy `<userData>/overhead.db` and `<userData>/vault/` to a dated backup before the first schema change.
+- **MUST** get explicit confirmation from Yoav at that moment — the planning-time agreement is not sufficient authorization for the irreversible act.
+- **MUST NOT** proceed if the backup step fails.
+
+---
+
+## Deferred — explicitly not built this round
+
+| Item | Where it's recorded |
+|---|---|
+| Real FocusCard / focus dashboard | **B1** — placeholder retained, pending UX brainstorm |
+| Kanban presentation | **B3–B6** — table only this round |
+| Backlink read UI ("mentioned in…") | **C10** — data captured, presentation later |
+| Body/content search | **A4** — titles and ids only |
+| Configurable vault path | **E4** — not raised as a requirement |
+| Bulk actions in Archived | **B7** |
+
+---
+
+## Build log
+
+_Entries appended as units complete._
