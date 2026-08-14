@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { IconUser } from '@tabler/icons-react'
-import { Archive, PlusIcon, Settings } from 'lucide-react'
+import { Archive, FolderOpen, Settings } from 'lucide-react'
 
 const NAV_GROUPS = [
   ['Home', 'Product', 'Explore', 'Execute'],
@@ -16,9 +16,14 @@ const NAV_GROUPS = [
 interface NavbarProps {
   active: string
   onSelect: (tab: string) => void
+  /**
+   * The open project's name. Optional only because the shell reads it over
+   * IPC — the fallback covers the frame before that answer arrives.
+   */
+  projectName?: string
 }
 
-export function Navbar({ active, onSelect }: NavbarProps) {
+export function Navbar({ active, onSelect, projectName }: NavbarProps) {
   return (
     <div className="flex items-center justify-between px-4 py-2 bg-background">
       {/* Tab groups */}
@@ -43,9 +48,6 @@ export function Navbar({ active, onSelect }: NavbarProps) {
             ))}
           </div>
         ))}
-        <Button variant="outline" size="icon">
-          <PlusIcon />
-        </Button>
       </div>
 
       {/* Right side */}
@@ -57,11 +59,15 @@ export function Navbar({ active, onSelect }: NavbarProps) {
           <DropdownMenuTrigger
             render={
               <Button variant="outline">
-                <IconUser /> Project Name
+                <IconUser /> {projectName ?? 'No project'}
               </Button>
             }
           />
           <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => onSelect('Projects')}>
+              <FolderOpen className="h-4 w-4" />
+              Projects
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onSelect('Archived')}>
               <Archive className="h-4 w-4" />
               Archived Tickets
