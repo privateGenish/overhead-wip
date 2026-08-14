@@ -28,6 +28,18 @@ Explicitly rejected, and not to be reintroduced by an implementing agent "for co
 
 There is one user. Coordination features exist to solve problems this app does not have. Every field added is a field to fill in, and filling in fields is exactly the overhead the product exists to remove. **When in doubt, leave it out** — the bar for a new field is that it improves thinking or the agent handoff, not that a tracker would have it.
 
+### Standing authorization — existing data is disposable
+
+> **"Genuinely nothing in that .db is live at all — it's all mock data and prototype schemas. You can rewrite the schemas and data, it's not important."** — Yoav
+
+**This authorization stands for this round and all coming iterations.** It does not expire with a single task.
+
+- Schemas and stored data may be rewritten, dropped, or restructured freely. No migration of existing rows is required, ever, for data created before this plan.
+- No confirmation prompt is needed before a destructive schema change, and no backup ceremony is required.
+- The vault's `.md` files are equally disposable — they mirror the same prototype data.
+
+⚠️ **The one boundary:** this covers the *app's own prototype data* in `<userData>`. It is **not** authorization to delete source code, git history, or anything under the repository working tree.
+
 ### Standing constraint — the developer plans, the agent follows
 
 *Yoav's rationale for rejecting ticket hierarchy. It generalizes well beyond that one decision.*
@@ -1139,7 +1151,8 @@ CREATE INDEX idx_mentions_target ON mentions(target_uuid);
 **Rules**
 - **MUST** derive the `mentions` table entirely from document content — it is a **projection, never a source of truth**. Rebuilding it from scratch by re-parsing every ticket and note must always be safe and produce identical results.
 - **MUST** delete a note's mention rows when the note is deleted. `source_uuid` cannot use a foreign key because it spans two tables; handle it explicitly.
-- **SHOULD** add a `schema_version` row now. *(Recommended against the "fresh start" decision, which only settles that today's data is disposable — it does not help the next schema change, which arrives once the app holds real work. Nearly free while the schema is being rewritten; expensive to retrofit.)*
+- **MUST NOT** add a `schema_version` table or any runtime migration machinery. **Decided:** schema changes are **documented manually** in `docs/SCHEMA-CHANGES.md` and applied by rewriting the schema — no live versioning carried in the codebase. *(This supersedes the earlier recommendation to add a version row.)*
+- **MUST** append an entry to `docs/SCHEMA-CHANGES.md` whenever the schema changes: what changed, when, and why. That document is the migration record.
 - **MUST NOT** carry over the ad-hoc `try { ALTER TABLE … } catch {}` blocks in `sqlite.ts`. They exist only to patch databases that are being discarded.
 
 ### 0.4 Boot and project-switch lifecycle
@@ -1186,9 +1199,11 @@ openProject(uuid):
 
 ### 0.5 Fresh start
 
-- **MUST** back up `overhead.db` and `vault/` before the first destructive step, even though the data is declared disposable. It costs nothing and the decision is irreversible.
-- **MUST** confirm with Yoav immediately before executing, not merely because it was agreed in planning.
-- **MUST NOT** write migration code for the old single-workspace schema. It is being discarded.
+Covered by the **standing authorization** at the top of this document — the existing database and vault are prototype data and may be rewritten freely, now and in future iterations.
+
+- **MUST NOT** write migration code for the old single-workspace schema.
+- **MUST NOT** pause for confirmation before rewriting the schema or clearing prototype data.
+- **MUST** record the change in `docs/SCHEMA-CHANGES.md` (§0.3).
 
 ---
 
@@ -1348,6 +1363,27 @@ overhead://project/<project-uuid>/note/<note-uuid>
 2. `npx vitest run` — all tests pass, including the pre-existing 75
 3. The app launches and the touched surface works in the real Electron shell
 
+### Technical risk is encoded as tests
+
+**Decided working method:** where this plan identifies a technical risk, **write a unit test that encodes it** rather than relying on care during implementation. A failing test then drives a fix iteration — re-run an agent against the failure — instead of requiring manual diagnosis.
+
+- **MUST** write the risk test **before or alongside** the implementation it guards, not after the unit is declared done.
+- **MUST** make the test fail for the right reason first — a test that passes against unwritten code is guarding nothing.
+- A red risk test is a **normal, expected outcome**, not a setback. It is the mechanism working: it converts "be careful here" into a specific, mechanically checkable failure an agent can be pointed at.
+
+**Risks that must have tests** (each maps to a gate in the table below):
+
+| Risk | Test must prove |
+|---|---|
+| Project switch leaves a live watcher on the old vault | After two switches, no watcher remains on any previous vault directory |
+| `vaultManager.lastPaths` carries across projects | The uuid→filename map is empty after `closeProject()` |
+| History snapshots record stale text | A flush ordering test: pending write lands **before** the snapshot |
+| Debounce never actually fires / fires per keystroke | Write count over a burst of input is 1, not N |
+| `mentions` projection drifts from document content | Rebuilding from scratch produces identical rows |
+| Deletion orphans rows | Deleting a ticket clears relations, history, graph rows **and** mentions |
+| Backlog flag silently dropped on create | Created ticket has the flag the form supplied |
+| Deep link resolves to the wrong project | A cross-project link switches project *then* routes |
+
 ---
 
 ## Unit order
@@ -1359,7 +1395,7 @@ Dependencies drive the sequence. Units 1–3 are foundational; 4 onwards mostly 
 | **1** | **Green build + hygiene** | Fix the ~15 `tsc` errors (**E8**). Remove the stale `.claude/worktrees/kind-joliot-40c7c0`. Confirm root `node_modules/` intent. | — | `npm run build` produces a package. This is the first time that's been true. |
 | **2** | **Test infrastructure** | jsdom + Testing Library under existing Vitest. One real component test as proof. | 1 | A component test runs and fails correctly when the component breaks. |
 | **3** | **Persistence + editor** | Debounced writes with flush contract, `setContent`/`setEditable` instead of remount (**C3**, §1.2–1.3). | 2 | Typing does **not** produce a write per keystroke (verify by log/counter). Cursor and undo survive an external update. Flush-before-snapshot proven by test. |
-| **4** | **Project foundations** ⚠️ | `global.db`, per-project directories, fresh-start schema incl. `pinned`/`notes`/`mentions`, boot + switch lifecycle (**A3**, §0.1–0.5). | 3 | Switching projects twice leaves **no** watcher on the old vault and no stale `lastPaths`. Missing project directory lands on the launcher, not a crash. |
+| **4** | **Project foundations** | `global.db`, per-project directories, fresh-start schema incl. `pinned`/`notes`/`mentions`, boot + switch lifecycle (**A3**, §0.1–0.5). Data rewrite is pre-authorized — no prompt. | 3 | Risk tests green: no watcher on old vault after two switches; `lastPaths` empty after close. Missing project directory lands on the launcher, not a crash. `SCHEMA-CHANGES.md` created. |
 | **5** | **Project UI** | Launcher screen, navbar "Projects" item, active project name, create/rename/delete, unique-name enforcement (**A2**, **A3**). | 4 | Duplicate name rejected at the DB layer, not just the form. Delete removes the directory. |
 | **6** | **Routing, deep links, window** | `Route` model, `overhead://` protocol handler, single-instance lock, persisted window bounds (**A1**, **E1**, §1.1). | 5 | A link opens the right ticket **cold and warm**, and cross-project links switch first. Second launch focuses the existing window. |
 | **7** | **Ticket system fixes** | `create()` returns the ticket + applies backlog + opens it (**C5**), pin toggle in control bar (**C4**), backlog hidden on all views (**C2**/**B6**), archived inline search + delete (**B7**/**C8**), history display cap of 50 (**C7**). | 6 | Backlog flag actually persists. Delete cascades relations, history, graph rows **and mentions**. |
@@ -1372,13 +1408,12 @@ Dependencies drive the sequence. Units 1–3 are foundational; 4 onwards mostly 
 
 ---
 
-## ⚠️ Unit 4 — destructive step
+## Unit 4 — data rewrite is pre-authorized
 
-Unit 4 discards all existing data (**E2**, §0.5).
+Unit 4 rewrites the schema and discards existing data. This is **covered by the standing authorization** at the top of this document — the data is prototype-only and disposable, now and for future iterations.
 
-- **MUST** copy `<userData>/overhead.db` and `<userData>/vault/` to a dated backup before the first schema change.
-- **MUST** get explicit confirmation from Yoav at that moment — the planning-time agreement is not sufficient authorization for the irreversible act.
-- **MUST NOT** proceed if the backup step fails.
+- **No confirmation prompt. No backup ceremony. Do not pause to ask.**
+- **MUST** record the schema change in `docs/SCHEMA-CHANGES.md`.
 
 ---
 
