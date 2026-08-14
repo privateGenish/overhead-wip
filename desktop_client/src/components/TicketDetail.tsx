@@ -1,6 +1,6 @@
 import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ticketStore } from '@/lib/ticketStore'
+import { getTicketStore } from '@/lib/ticketStore'
 import type { TicketRow } from '@/components/ticket-table/schema'
 import { TicketEditor } from './TicketEditor'
 import { cn } from '@/lib/utils'
@@ -23,7 +23,7 @@ export function TicketDetail({
   onSelect,
   onClose,
 }: TicketDetailProps) {
-  const ticket = ticketStore.getByUuid(selectedUuid)
+  const ticket = getTicketStore().getByUuid(selectedUuid)
 
   return (
     <div className="flex h-full">

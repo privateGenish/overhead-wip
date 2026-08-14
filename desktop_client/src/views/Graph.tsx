@@ -18,7 +18,7 @@ import '@xyflow/react/dist/style.css'
 
 import { graphClient } from '@/lib/graphClient'
 import { relationsClient } from '@/lib/relationsClient'
-import { useTickets, ticketStore } from '@/lib/ticketStore'
+import { useTickets, getTicketStore } from '@/lib/ticketStore'
 import { layoutCluster } from '@/lib/graphLayout'
 import { TICKET_TYPES } from '@/shared/types/ticketOptions'
 import type { GraphView, GraphViewEdge, TicketRelation } from '@/types/electron'
@@ -160,7 +160,7 @@ function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: Canv
       ])
       if (cancelled) return
 
-      const active = new Set(ticketStore.getActiveSnapshot().map((t) => t.uuid))
+      const active = new Set(getTicketStore().getActiveSnapshot().map((t) => t.uuid))
       const flowNodes: Node[] = dbNodes
         .filter((n) => active.has(n.ticket_uuid))
         .map((n) => ({ id: n.ticket_uuid, type: 'ticket', position: { x: n.x, y: n.y }, data: {} }))

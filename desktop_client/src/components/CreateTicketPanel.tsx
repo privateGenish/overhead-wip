@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ticketStore } from '@/lib/ticketStore'
+import { getTicketStore } from '@/lib/ticketStore'
 import { TICKET_TYPES, type TicketType } from '@/shared/types'
 import { Maximize2, X } from 'lucide-react'
 import './ticket-editor.css'
@@ -53,9 +53,9 @@ export function CreateTicketPanel({ fixedType }: CreateTicketPanelProps) {
   async function create() {
     const trimmed = title.trim()
     if (!trimmed || !type) return
-    await ticketStore.create(type, trimmed)
+    await getTicketStore().create(type, trimmed)
     // setDescription on the new ticket via store
-    const tickets = ticketStore.getSnapshot()
+    const tickets = getTicketStore().getSnapshot()
     const created = tickets[tickets.length - 1]
     if (description.trim()) created.setDescription(description)
     collapse()

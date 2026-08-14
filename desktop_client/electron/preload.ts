@@ -24,3 +24,21 @@ contextBridge.exposeInMainWorld('db', {
     }
   },
 })
+
+contextBridge.exposeInMainWorld('projects', {
+  list:   () => ipcRenderer.invoke('project:list'),
+  active: () => ipcRenderer.invoke('project:active'),
+  create: (name: string, prefix: string) => ipcRenderer.invoke('project:create', name, prefix),
+  rename: (uuid: string, name: string) => ipcRenderer.invoke('project:rename', uuid, name),
+  remove: (uuid: string) => ipcRenderer.invoke('project:delete', uuid),
+  switch: (uuid: string) => ipcRenderer.invoke('project:switch', uuid),
+  onChanged: (callback: (project: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, project: unknown) => {
+      callback(project)
+    }
+    ipcRenderer.on('project:changed', listener)
+    return () => {
+      ipcRenderer.removeListener('project:changed', listener)
+    }
+  },
+})

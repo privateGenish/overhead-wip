@@ -141,3 +141,15 @@ export async function stopVaultWatcher(): Promise<void> {
   watcher = null
   if (active) await active.close()
 }
+
+/**
+ * Test seam: whether a watcher is currently attached.
+ *
+ * Closing a project MUST leave this false. Note that `initVaultWatcher`
+ * defensively stops any existing watcher, which masks a missing stop in the
+ * close path — so this is asserted directly rather than inferred from
+ * behaviour after the next open.
+ */
+export function __isVaultWatcherActive(): boolean {
+  return watcher !== null
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Plus } from 'lucide-react'
 import { relationsClient } from '@/lib/relationsClient'
-import { ticketStore, useTickets } from '@/lib/ticketStore'
+import { getTicketStore, useTickets } from '@/lib/ticketStore'
 import type { TicketRelation } from '@/types/electron'
 import type { Ticket, TicketType } from '@/shared/types'
 import { cn } from '@/lib/utils'
@@ -17,7 +17,7 @@ interface RelationChipProps {
 }
 
 function RelationChip({ uuid, relationUuid, onRemove }: RelationChipProps) {
-  const ticket = ticketStore.getByUuid(uuid)
+  const ticket = getTicketStore().getByUuid(uuid)
   return (
     <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/50 px-2 py-0.5 text-xs">
       <span className="font-mono text-muted-foreground">{ticket?.id ?? '…'}</span>

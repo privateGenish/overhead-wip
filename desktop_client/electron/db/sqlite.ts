@@ -15,6 +15,7 @@ export function initSqlite(file: string): void {
       type        TEXT NOT NULL CHECK(type IN ('Explore', 'Feature', 'Execute')),
       status      TEXT NOT NULL,
       backlog     INTEGER NOT NULL DEFAULT 0,
+      pinned      INTEGER NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '',
       archived    INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL,
@@ -66,22 +67,48 @@ export function initSqlite(file: string): void {
       target_handle TEXT
     );
 
-  `)
+    CREATE TABLE IF NOT EXISTS notes (
+      uuid       TEXT PRIMARY KEY,
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
 
-  // Migrate existing graph_view_edges tables that predate the handle columns.
-  // SQLite's ALTER TABLE has no IF NOT EXISTS — swallow the error if they exist.
-  try { db.exec('ALTER TABLE graph_view_edges ADD COLUMN source_handle TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE graph_view_edges ADD COLUMN target_handle TEXT') } catch { /* already exists */ }
+    -- Backlinks extracted from markdown (@OVH-123). A projection of document
+    -- content, never a source of truth: rebuilding it by re-parsing every
+    -- ticket and note must always be safe.
+    CREATE TABLE IF NOT EXISTS mentions (
+      source_type TEXT NOT NULL CHECK(source_type IN ('ticket', 'note')),
+      source_uuid TEXT NOT NULL,
+      target_uuid TEXT NOT NULL REFERENCES tickets(uuid) ON DELETE CASCADE,
+      PRIMARY KEY (source_type, source_uuid, target_uuid)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mentions_target ON mentions(target_uuid);
+  `)
 }
 
 function ready(): DatabaseSync {
-  if (!db) throw new Error('SQLite not initialised — call initSqlite() first.')
+  if (!db) {
+    throw new Error('No project database is open — open a project first.')
+  }
   return db
 }
 
-export function __resetSqliteForTests(): void {
+/** True when a project database is currently open. */
+export function isSqliteOpen(): boolean {
+  return db !== null
+}
+
+/** Closes the active project database. Safe to call when none is open. */
+export function closeSqlite(): void {
   db?.close()
   db = null
+}
+
+export function __resetSqliteForTests(): void {
+  closeSqlite()
 }
 
 // ---------------------------------------------------------------------------
