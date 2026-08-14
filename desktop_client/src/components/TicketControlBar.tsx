@@ -5,7 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ticketStore } from '@/lib/ticketStore'
+import { getTicketStore } from '@/lib/ticketStore'
 import {
   TICKET_STATUS_OPTIONS,
   TICKET_TYPES,
@@ -20,7 +20,7 @@ interface TicketControlBarProps {
 export function TicketControlBar({ ticket }: TicketControlBarProps) {
   function changeType(type: TicketType | null) {
     if (!type) return
-    void ticketStore.setTicketType(ticket, type)
+    void getTicketStore().setTicketType(ticket, type)
   }
 
   function changeStatus(status: string | null) {

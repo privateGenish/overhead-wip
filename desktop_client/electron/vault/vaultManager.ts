@@ -33,9 +33,23 @@ function rebuildIndex(): void {
   }
 }
 
-export function __resetVaultForTests(): void {
+/**
+ * Releases the vault. MUST be called when closing a project — `lastPaths` is
+ * module-level state keyed by ticket uuid, and carrying it into the next
+ * project would delete files belonging to the wrong one.
+ */
+export function closeVault(): void {
   vaultDir = ''
   lastPaths.clear()
+}
+
+/** Test seam: how many uuid→filename entries are currently cached. */
+export function __vaultIndexSize(): number {
+  return lastPaths.size
+}
+
+export function __resetVaultForTests(): void {
+  closeVault()
 }
 
 function buildFrontmatter(ticket: TicketRow): string {

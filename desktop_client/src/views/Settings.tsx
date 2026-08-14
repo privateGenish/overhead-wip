@@ -9,7 +9,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog'
-import { ticketStore } from '@/lib/ticketStore'
+import { getTicketStore } from '@/lib/ticketStore'
 
 const SECTIONS = ['General', 'Account', 'Notifications', 'Admin Control', 'About']
 
@@ -19,7 +19,7 @@ function AdminControl() {
 
   async function handleDeleteAll() {
     setBusy(true)
-    await ticketStore.deleteAll()
+    await getTicketStore().deleteAll()
     setBusy(false)
     setOpen(false)
   }

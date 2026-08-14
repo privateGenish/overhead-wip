@@ -17,8 +17,24 @@ type RelationPayload =
   | { ticketUuid: string }
   | Record<string, never> // listAll takes no payload
 
+export interface Project {
+  uuid: string
+  name: string
+  prefix: string
+  created_at: number
+}
+
 declare global {
   interface Window {
+    projects: {
+      list:   () => Promise<Project[]>
+      active: () => Promise<Project | null>
+      create: (name: string, prefix: string) => Promise<Project>
+      rename: (uuid: string, name: string) => Promise<Project>
+      remove: (uuid: string) => Promise<{ uuid: string }>
+      switch: (uuid: string) => Promise<Project>
+      onChanged?: (callback: (project: Project | null) => void) => () => void
+    }
     db: {
       query:        (sql: string, params?: unknown[]) => Promise<unknown>
       ticket:       (sql: string, params?: unknown[]) => Promise<unknown>

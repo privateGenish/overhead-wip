@@ -30,6 +30,8 @@ export class TicketStore {
   #archived: Ticket[] = []  // stable archived ref for useSyncExternalStore
   #listeners = new Set<() => void>()
   #unsubscribes = new Map<Ticket, () => void>()
+  /** Teardown for the window/IPC listeners wired in the constructor. */
+  #teardown: (() => void)[] = []
 
   constructor() {
     // Wire the ticket model's service hooks — persistence lives behind these.
@@ -45,9 +47,10 @@ export class TicketStore {
       await ticketClient.delete(ticket.uuid)
     })
     Ticket.setGenerateIdHook(() => Counter.next())
-    window.db.onVaultTicketUpdated?.((uuid) => {
+    const unsubscribeVault = window.db.onVaultTicketUpdated?.((uuid) => {
       void this.syncFromStorage(uuid)
     })
+    if (unsubscribeVault) this.#teardown.push(unsubscribeVault)
 
     // Last line of defence for the debounce window: quitting mid-edit must not
     // drop the pending write. These can't await, but ipcRenderer.invoke posts
@@ -55,8 +58,27 @@ export class TicketStore {
     const flushOnExit = () => { void persistQueue.flushAll() }
     window.addEventListener('beforeunload', flushOnExit)
     window.addEventListener('pagehide', flushOnExit)
+    this.#teardown.push(() => {
+      window.removeEventListener('beforeunload', flushOnExit)
+      window.removeEventListener('pagehide', flushOnExit)
+    })
 
     void this.#hydrate()
+  }
+
+  /**
+   * Releases everything this store holds. Called on project switch — without
+   * it the previous project's IPC and window listeners stay live and keep
+   * syncing into a store that is no longer displayed.
+   */
+  dispose(): void {
+    for (const off of this.#teardown) off()
+    this.#teardown = []
+    for (const ticket of this.#tickets) this.#untrack(ticket)
+    this.#listeners.clear()
+    this.#tickets = []
+    this.#active = []
+    this.#archived = []
   }
 
   async #hydrate(): Promise<void> {
@@ -179,16 +201,60 @@ export class TicketStore {
   }
 }
 
-export const ticketStore = new TicketStore()
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+/**
+ * The store is created explicitly rather than at import time, because it is
+ * scoped to the *active project*: switching projects tears this down and builds
+ * a new one against the new database. An import-time singleton could not be
+ * rebuilt, and forced every consumer to exist in a world where a project was
+ * always open.
+ */
+let store: TicketStore | null = null
+
+/** Builds the store for the newly-opened project. Call before rendering. */
+export function initTicketStore(): TicketStore {
+  store?.dispose()
+  store = new TicketStore()
+  return store
+}
+
+/** Tears the store down — on project switch, before `initTicketStore` again. */
+export function disposeTicketStore(): void {
+  store?.dispose()
+  store = null
+}
+
+/**
+ * The active project's store.
+ *
+ * @throws if no project is open — callers rendering ticket UI must only do so
+ * once a project has been entered.
+ */
+export function getTicketStore(): TicketStore {
+  if (!store) {
+    throw new Error('No ticket store — initTicketStore() must run after a project is opened.')
+  }
+  return store
+}
+
+/** True when a project's store is live. Lets shells render a launcher instead. */
+export function hasTicketStore(): boolean {
+  return store !== null
+}
 
 /** Binds React to the active (non-archived) ticket list. */
 export function useTickets(): Ticket[] {
-  return useSyncExternalStore(ticketStore.subscribe, ticketStore.getActiveSnapshot)
+  const s = getTicketStore()
+  return useSyncExternalStore(s.subscribe, s.getActiveSnapshot)
 }
 
 /** Binds React to the archived ticket list. */
 export function useArchivedTickets(): Ticket[] {
-  return useSyncExternalStore(ticketStore.subscribe, ticketStore.getArchivedSnapshot)
+  const s = getTicketStore()
+  return useSyncExternalStore(s.subscribe, s.getArchivedSnapshot)
 }
 
 /** Binds React to a single ticket — re-renders only when that ticket mutates. */

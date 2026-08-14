@@ -1,12 +1,12 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { ticketStore, useTickets } from '@/lib/ticketStore'
+import { getTicketStore, useTickets } from '@/lib/ticketStore'
 import { Badge } from '@/components/ui/badge'
 
 export function TicketNode({ id }: NodeProps) {
   // Subscribe to the ticket list so node content stays fresh when a ticket's
   // title/status changes or it gets replaced (e.g. type change).
   useTickets()
-  const ticket = ticketStore.getByUuid(id)
+  const ticket = getTicketStore().getByUuid(id)
 
   if (!ticket) {
     return (
