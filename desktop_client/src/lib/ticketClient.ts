@@ -66,6 +66,20 @@ class TicketClient {
     return rows[0] ? rowToTicketData(rows[0]) : null
   }
 
+  /**
+   * Looks a ticket up by the id a person can see (`OVH-123`).
+   *
+   * Deep links name tickets this way, and they arrive before the store has
+   * finished hydrating — so this asks the database rather than the store.
+   */
+  async getByHumanId(id: string): Promise<TicketData | null> {
+    const rows = await window.db.ticket(
+      'SELECT * FROM tickets WHERE id = ? LIMIT 1',
+      [id],
+    ) as TicketRowResponse[]
+    return rows[0] ? rowToTicketData(rows[0]) : null
+  }
+
   async delete(uuid: string): Promise<void> {
     await window.db.ticket('DELETE FROM tickets WHERE uuid = ?', [uuid])
   }

@@ -596,7 +596,16 @@ function TicketsSidebar({ canvasNodeIds }: { canvasNodeIds: Set<string> }) {
 // Graph root
 // ---------------------------------------------------------------------------
 
-export function Graph() {
+interface GraphProps {
+  /**
+   * Opens straight into this view — a deep link's landing point. The shell
+   * checks the view still exists before routing here, so an unknown uuid never
+   * reaches this component.
+   */
+  initialViewUuid?: string
+}
+
+export function Graph({ initialViewUuid }: GraphProps = {}) {
   const [views, setViews] = useState<GraphView[]>([])
   const [activeViewUuid, setActiveViewUuid] = useState<string | null>(null)
   const [relations, setRelations] = useState<TicketRelation[]>([])
@@ -614,11 +623,12 @@ export function Graph() {
       let vs = await graphClient.listViews()
       if (vs.length === 0) vs = [await graphClient.createView('View 1')]
       setViews(vs)
-      setActiveViewUuid((cur) => cur ?? vs[0].uuid)
+      const requested = vs.some((v) => v.uuid === initialViewUuid) ? initialViewUuid : undefined
+      setActiveViewUuid((cur) => cur ?? requested ?? vs[0].uuid)
       setRelations(await relationsClient.listAll())
     }
     void init()
-  }, [])
+  }, [initialViewUuid])
 
   // Reload view list + relations when bridge mutates graph data externally.
   // Relations must refresh too: typed edges (blocked-by / relates-to) are derived

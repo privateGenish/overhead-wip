@@ -26,6 +26,14 @@ export interface Project {
 
 declare global {
   interface Window {
+    /**
+     * Optional because it only exists behind the preload bridge — tests and any
+     * non-Electron host render without it.
+     */
+    deepLink?: {
+      /** Subscribes to `overhead://` links. Returns an unsubscribe. */
+      onOpen: (callback: (url: string) => void) => () => void
+    }
     projects: {
       list:   () => Promise<Project[]>
       active: () => Promise<Project | null>

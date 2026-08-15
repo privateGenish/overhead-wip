@@ -11,10 +11,17 @@ import type { TicketRow } from '@/components/ticket-table/schema'
 interface TicketViewProps {
   filter?: (ticket: TicketRow) => boolean
   fixedType?: TicketType
+  /**
+   * Opens straight into this ticket — a deep link's landing point. Seeds the
+   * selection rather than controlling it, so closing the detail still returns
+   * to the list; the shell keys this component on the uuid, so a second link
+   * mounts a fresh one instead of reviving a stale seed.
+   */
+  initialTicketUuid?: string
 }
 
-export function TicketView({ filter, fixedType }: TicketViewProps) {
-  const [selectedUuid, setSelectedUuid] = useState<string | null>(null)
+export function TicketView({ filter, fixedType, initialTicketUuid }: TicketViewProps) {
+  const [selectedUuid, setSelectedUuid] = useState<string | null>(initialTicketUuid ?? null)
 
   const tickets = useTickets()
   const rows = useMemo(() => toRows(tickets), [tickets])
