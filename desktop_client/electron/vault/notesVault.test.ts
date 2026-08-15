@@ -145,8 +145,9 @@ describe('notes → vault', () => {
       `INSERT INTO tickets (uuid, id, title, type, status, backlog, description, archived, created_at, updated_at)
        VALUES ('t1', 'OVH-001', 'Target', 'Execute', 'Draft', 0, '', 0, 1, 1)`,
     )
+    // The row is no longer seeded by hand — writing the body is what makes it.
     upsert('n1', 'Mentions one', 'about @OVH-001')
-    runSql(`INSERT INTO mentions (source_type, source_uuid, target_uuid) VALUES ('note', 'n1', 't1')`)
+    expect(runSql('SELECT source_uuid FROM mentions')).toEqual([{ source_uuid: 'n1' }])
 
     deleteNote('n1')
 

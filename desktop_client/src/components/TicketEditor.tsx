@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { TicketControlBar } from '@/components/TicketControlBar'
 import { TicketHistory } from '@/components/TicketHistory'
 import { TicketRelations } from '@/components/TicketRelations'
+import { MentionMenu } from '@/components/MentionMenu'
 import type { Ticket } from '@/shared/types'
 import './ticket-editor.css'
 
@@ -173,6 +174,9 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
               }}
             />
           </EditorRoot>
+          {/* Typing `@` offers this project's tickets; what lands in the
+              document is plain `@OVH-123` text. */}
+          <MentionMenu editor={editor} />
         </div>
 
         {/* Drag divider */}

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { watch, type FSWatcher } from 'chokidar'
 import { runSql } from '../db/sqlite'
+import { syncMentions } from '../db/mentions'
 import { NOTES_DIRNAME } from './vaultManager'
 
 interface ParsedMarkdown {
@@ -100,6 +101,10 @@ export function syncMarkdownToSqlite(
     'UPDATE tickets SET description = ?, updated_at = ? WHERE uuid = ?',
     [description, stat.mtime.getTime(), uuid],
   )
+  // This write bypasses `runTicketSql`, so it has to re-derive the backlinks
+  // itself. Without it, a description edited in Obsidian would leave the
+  // mentions table describing text that is no longer in the file (§2.1).
+  syncMentions('ticket', uuid, description)
   onSynced?.(uuid)
   return true
 }

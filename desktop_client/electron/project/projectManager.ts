@@ -17,6 +17,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { closeSqlite, initSqlite } from '../db/sqlite'
+import { rebuildAllMentions } from '../db/mentions'
 import {
   getProject,
   listProjects,
@@ -80,6 +81,11 @@ export function openProject(uuid: string): ProjectRow {
   fs.mkdirSync(vaultDir, { recursive: true })
 
   initSqlite(projectDbPath(uuid))
+  // The mentions table is a projection, so opening a project is a free chance
+  // to re-derive it from the documents themselves. It repairs the one case
+  // incremental extraction cannot: a mention written before its target ticket
+  // existed, whose target exists now.
+  rebuildAllMentions()
   initVault(vaultDir)
   initVaultWatcher(vaultDir, notifyVaultTicket)
 
