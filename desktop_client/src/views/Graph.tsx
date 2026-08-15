@@ -20,6 +20,7 @@ import { graphClient } from '@/lib/graphClient'
 import { relationsClient } from '@/lib/relationsClient'
 import { useTickets, getTicketStore } from '@/lib/ticketStore'
 import { layoutCluster } from '@/lib/graphLayout'
+import { useResolvedTheme } from '@/lib/theme'
 import { TICKET_TYPES } from '@/shared/types/ticketOptions'
 import type { GraphView, GraphViewEdge, TicketRelation } from '@/types/electron'
 import { TicketNode } from '@/components/graph/TicketNode'
@@ -137,6 +138,9 @@ function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: Canv
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const { screenToFlowPosition, getNodes } = useReactFlow()
   const activeTickets = useTickets()
+  // The canvas paints its own controls and grid from its own stylesheet, so it
+  // has to be told the theme rather than inheriting it.
+  const colorMode = useResolvedTheme()
 
   // Stable string signatures so membership-driven effects don't fire on every
   // position change during a drag.
@@ -459,6 +463,7 @@ function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: Canv
   return (
     <>
       <ReactFlow
+        colorMode={colorMode}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}

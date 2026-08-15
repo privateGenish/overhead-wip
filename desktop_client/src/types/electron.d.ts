@@ -34,6 +34,15 @@ declare global {
       /** Subscribes to `overhead://` links. Returns an unsubscribe. */
       onOpen: (callback: (url: string) => void) => () => void
     }
+    /**
+     * Global settings — theme and account, the state that outlives a project
+     * switch. Optional for the same reason `deepLink` is: it only exists
+     * behind the preload bridge.
+     */
+    appSettings?: {
+      get: (key: string) => Promise<string | null>
+      set: (key: string, value: string) => Promise<void>
+    }
     projects: {
       list:   () => Promise<Project[]>
       active: () => Promise<Project | null>
