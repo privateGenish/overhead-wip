@@ -131,13 +131,38 @@ function handleVaultFile(filename: string, onSynced?: VaultSyncListener): void {
   syncMarkdownToSqlite(filename, undefined, onSynced)
 }
 
-export function initVaultWatcher(
+export interface VaultWatcherOptions {
+  /**
+   * Poll the filesystem instead of relying on native change notifications.
+   *
+   * Off in the app: native events are cheaper and plenty timely. On in tests,
+   * because they must be *deterministic* rather than fast. macOS delivers
+   * native events through fsevents, and under the load of a full parallel test
+   * run that delivery is best-effort — the write lands, the event does not, and
+   * no length of timeout helps because nothing is ever coming. Polling trades a
+   * little CPU for an event that is guaranteed to arrive.
+   */
+  usePolling?: boolean
+}
+
+/**
+ * Starts watching `vaultDir`, replacing any watcher already running.
+ *
+ * Awaits the previous watcher's close rather than firing it off: chokidar's
+ * close releases a native handle on the watched path, and when the next watcher
+ * covers that same path an unawaited close can land *after* it attached,
+ * taking the new event stream down with it.
+ */
+export async function initVaultWatcher(
   vaultDir: string,
   onSynced?: VaultSyncListener,
-): FSWatcher {
-  void stopVaultWatcher()
+  options: VaultWatcherOptions = {},
+): Promise<FSWatcher> {
+  await stopVaultWatcher()
   watcher = watch(vaultDir, {
     ignoreInitial: true,
+    usePolling: options.usePolling ?? false,
+    interval: 25,
     awaitWriteFinish: {
       stabilityThreshold: 100,
       pollInterval: 25,

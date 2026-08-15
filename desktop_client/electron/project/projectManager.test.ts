@@ -89,9 +89,9 @@ describe('project registry', () => {
 })
 
 describe('open / close', () => {
-  it('creates the project directory and database on first open', () => {
+  it('creates the project directory and database on first open', async () => {
     const project = createProjectWithDir('Overhead', 'OVH')
-    openProject(project.uuid)
+    await openProject(project.uuid)
 
     expect(fs.existsSync(path.join(projectDir(project.uuid), 'overhead.db'))).toBe(true)
     expect(fs.existsSync(projectVaultDir(project.uuid))).toBe(true)
@@ -99,16 +99,16 @@ describe('open / close', () => {
     expect(getActiveProject()?.uuid).toBe(project.uuid)
   })
 
-  it('records the active project so the next boot returns to it', () => {
+  it('records the active project so the next boot returns to it', async () => {
     const project = createProjectWithDir('Overhead', 'OVH')
-    openProject(project.uuid)
+    await openProject(project.uuid)
     expect(getActiveProjectUuid()).toBe(project.uuid)
     expect(resolveBootProject()?.uuid).toBe(project.uuid)
   })
 
   it('clears the vault index on close — it is keyed by uuid and would leak', async () => {
     const project = createProjectWithDir('Overhead', 'OVH')
-    openProject(project.uuid)
+    await openProject(project.uuid)
 
     runSql(
       `INSERT INTO tickets (uuid, id, title, type, status, backlog, description, archived, created_at, updated_at)
@@ -127,7 +127,7 @@ describe('open / close', () => {
 
   it('clears the notes vault index on close — the same leak, one directory down', async () => {
     const project = createProjectWithDir('Overhead', 'OVH')
-    openProject(project.uuid)
+    await openProject(project.uuid)
 
     runSql(
       `INSERT INTO notes (uuid, title, body, created_at, updated_at)
@@ -154,7 +154,7 @@ describe('switching', () => {
   // watcher, so a missing stop in closeProject stays invisible end-to-end.
   it('stops the watcher when closing a project', async () => {
     const project = createProjectWithDir('Overhead', 'OVH')
-    openProject(project.uuid)
+    await openProject(project.uuid)
     await settle()
     expect(__isVaultWatcherActive()).toBe(true)
 
@@ -167,7 +167,7 @@ describe('switching', () => {
     const a = createProjectWithDir('One', 'ONE')
     const b = createProjectWithDir('Two', 'TWO')
 
-    openProject(a.uuid)
+    await openProject(a.uuid)
     await settle()
     await switchProject(b.uuid)
     await settle()
@@ -181,7 +181,7 @@ describe('switching', () => {
     const b = createProjectWithDir('Beta', 'BET')
     const c = createProjectWithDir('Gamma', 'GAM')
 
-    openProject(a.uuid)
+    await openProject(a.uuid)
     await settle()
     await switchProject(b.uuid)
     await settle()
@@ -213,7 +213,7 @@ describe('switching', () => {
     const a = createProjectWithDir('Alpha', 'ALP')
     const b = createProjectWithDir('Beta', 'BET')
 
-    openProject(a.uuid)
+    await openProject(a.uuid)
     runSql(
       `INSERT INTO tickets (uuid, id, title, type, status, backlog, description, archived, created_at, updated_at)
        VALUES ('only-in-a', 'ALP-001', 'Alpha ticket', 'Execute', 'Draft', 0, '', 0, 1, 1)`,
@@ -231,9 +231,9 @@ describe('boot resolution', () => {
     expect(resolveBootProject()).toBeNull()
   })
 
-  it('falls back to the launcher when the directory has gone missing', () => {
+  it('falls back to the launcher when the directory has gone missing', async () => {
     const project = createProjectWithDir('Overhead', 'OVH')
-    openProject(project.uuid)
+    await openProject(project.uuid)
     // Simulate the folder being moved or deleted behind the app's back.
     fs.rmSync(projectDir(project.uuid), { recursive: true, force: true })
 
@@ -243,7 +243,7 @@ describe('boot resolution', () => {
 
   it('falls back to the launcher when the pointer names an unregistered project', async () => {
     const project = createProjectWithDir('Overhead', 'OVH')
-    openProject(project.uuid)
+    await openProject(project.uuid)
     await deleteProjectAndDir(project.uuid)
 
     expect(resolveBootProject()).toBeNull()
@@ -260,7 +260,7 @@ describe('bootstrap and deletion', () => {
 
   it('deletes the directory along with the registry row', async () => {
     const project = createProjectWithDir('Doomed', 'DOO')
-    openProject(project.uuid)
+    await openProject(project.uuid)
 
     await deleteProjectAndDir(project.uuid)
 

@@ -160,7 +160,7 @@ describe('extraction on inbound vault edits (§2.1)', () => {
     upsert('t2', 'OVH-002', 'No references yet.')
     expect(mentionTargets('t2')).toEqual([])
 
-    const active = initVaultWatcher(vaultDir)
+    const active = await initVaultWatcher(vaultDir, undefined, { usePolling: true })
     await waitForWatcherReady(active)
 
     // An editor that knows nothing about Overhead saves the file.

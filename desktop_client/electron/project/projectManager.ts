@@ -73,7 +73,7 @@ export function getActiveProject(): ProjectRow | null {
  *
  * @throws if the project is not in the registry.
  */
-export function openProject(uuid: string): ProjectRow {
+export async function openProject(uuid: string): Promise<ProjectRow> {
   const project = getProject(uuid)
   if (!project) throw new Error(`Project "${uuid}" is not registered.`)
 
@@ -87,7 +87,9 @@ export function openProject(uuid: string): ProjectRow {
   // existed, whose target exists now.
   rebuildAllMentions()
   initVault(vaultDir)
-  initVaultWatcher(vaultDir, notifyVaultTicket)
+  // Awaited: the watcher releases a native handle on close, and starting the
+  // next one before that lands can take the new event stream down with it.
+  await initVaultWatcher(vaultDir, notifyVaultTicket)
 
   active = project
   setActiveProjectUuid(uuid)
@@ -123,7 +125,7 @@ export async function closeProject(): Promise<void> {
  */
 export async function switchProject(uuid: string): Promise<ProjectRow> {
   await closeProject()
-  return openProject(uuid)
+  return await openProject(uuid)
 }
 
 /**
