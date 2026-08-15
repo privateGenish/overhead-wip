@@ -11,6 +11,7 @@ import {
   setVaultTicketListener,
 } from './project/projectManager'
 import { registerGeneralAPI } from './ipc/generalAPI'
+import { registerAppSettingsAPI } from './ipc/appSettingsAPI'
 import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
 import { registerNoteAPI } from './ipc/noteAPI'
 import { registerHistoryAPI } from './ipc/historyAPI'
@@ -127,6 +128,7 @@ if (!app.requestSingleInstanceLock()) {
     openProject(project.uuid)
 
     registerGeneralAPI()
+    registerAppSettingsAPI()
     registerTicketAPI()
     registerNoteAPI()
     registerHistoryAPI()

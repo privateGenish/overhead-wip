@@ -83,3 +83,11 @@
   height: 0;
   pointer-events: none;
 }
+
+/* The Vision tab's north star is one sentence you steer by, so it is set
+   larger and looser than body copy — a pull quote, not a form field. The size
+   has to be reached through the wrapper because `.ticket-prose` fixes its own. */
+.vision-lede .ticket-prose {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+}

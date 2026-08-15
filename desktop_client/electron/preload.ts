@@ -44,6 +44,13 @@ contextBridge.exposeInMainWorld('deepLink', {
   },
 })
 
+// Global settings — theme and account. These belong to the person, not to the
+// open project, so they do not go through `db:query`.
+contextBridge.exposeInMainWorld('appSettings', {
+  get: (key: string) => ipcRenderer.invoke('app-setting:get', key),
+  set: (key: string, value: string) => ipcRenderer.invoke('app-setting:set', key, value),
+})
+
 contextBridge.exposeInMainWorld('projects', {
   list:   () => ipcRenderer.invoke('project:list'),
   active: () => ipcRenderer.invoke('project:active'),

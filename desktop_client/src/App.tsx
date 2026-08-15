@@ -12,6 +12,7 @@ import { Settings } from '@/views/Settings'
 import { Archived } from '@/views/Archived'
 import { Projects } from '@/views/Projects'
 import { TicketView } from '@/components/TicketView'
+import { SearchPalette } from '@/components/SearchPalette'
 import { ChevronLeft, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { initTicketStore } from '@/lib/ticketStore'
@@ -115,6 +116,11 @@ function AppShell({
     if (route.kind !== 'overlay') covered.current = route
   }, [route])
 
+  // Search is available from everywhere the project is open, overlays
+  // included — choosing a result is a route change, so it leaves the overlay
+  // the same way the Back button would.
+  const palette = <SearchPalette onOpenTicket={(uuid) => onRoute({ kind: 'ticket', uuid })} />
+
   if (route.kind === 'overlay') {
     const { label, view } = OVERLAY_VIEWS[route.overlay]
     return (
@@ -135,6 +141,7 @@ function AppShell({
         <main className="flex-1 min-h-0">
           {view({ project, onEntered, onRegistryChanged })}
         </main>
+        {palette}
       </div>
     )
   }
@@ -151,6 +158,7 @@ function AppShell({
       />
       <LinkMessage message={linkError} onDismiss={onDismissLink} />
       <main className="flex-1 min-h-0">{renderRoute(route)}</main>
+      {palette}
     </div>
   )
 }
