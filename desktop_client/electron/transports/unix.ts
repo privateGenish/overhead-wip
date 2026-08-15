@@ -17,7 +17,7 @@
 import { createServer, type Server } from 'node:net'
 import { unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { dispatchBridge } from '../bridge'
+import { dispatchBridge, activeProjectStamp } from '../bridge'
 
 let server: Server | null = null
 let socketPath: string | null = null
@@ -46,7 +46,7 @@ export function startUnixServer(userData: string): void {
       try {
         const req = JSON.parse(line) as { method: string; args?: unknown }
         const result = dispatchBridge(req.method, req.args ?? null, { caller: 'unix' })
-        response = JSON.stringify({ result })
+        response = JSON.stringify({ result, project: activeProjectStamp() })
       } catch (err) {
         response = JSON.stringify({ error: (err as Error).message })
       }

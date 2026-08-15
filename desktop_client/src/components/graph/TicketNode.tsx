@@ -2,11 +2,14 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { getTicketStore, useTickets } from '@/lib/ticketStore'
 import { Badge } from '@/components/ui/badge'
 
-export function TicketNode({ id }: NodeProps) {
+export function TicketNode({ id, data }: NodeProps) {
   // Subscribe to the ticket list so node content stays fresh when a ticket's
   // title/status changes or it gets replaced (e.g. type change).
   useTickets()
   const ticket = getTicketStore().getByUuid(id)
+  // Arrives through node data because xyflow constructs nodes itself — props
+  // cannot be handed down from the view that owns navigation.
+  const onOpen = (data as { onOpen?: (uuid: string) => void } | undefined)?.onOpen
 
   if (!ticket) {
     return (
@@ -18,8 +21,12 @@ export function TicketNode({ id }: NodeProps) {
 
   return (
     <div
-      className="rounded-lg border bg-card shadow-sm px-3 py-2 w-44 cursor-default select-none"
-      onClick={() => { /* TODO: open ticket editor */ }}
+      className="rounded-lg border bg-card shadow-sm px-3 py-2 w-44 select-none cursor-pointer"
+      // Double-click, not single: a single click selects the node and starts a
+      // drag, which is how you arrange a canvas. Opening on it would make the
+      // graph unusable as a graph.
+      onDoubleClick={() => onOpen?.(id)}
+      title={onOpen ? 'Double-click to open' : undefined}
     >
       <Handle id="left"   type="source" position={Position.Left}   className="!bg-border" />
       <Handle id="right"  type="source" position={Position.Right}  className="!bg-border" />

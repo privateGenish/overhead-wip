@@ -157,7 +157,7 @@ function AppShell({
         }}
       />
       <LinkMessage message={linkError} onDismiss={onDismissLink} />
-      <main className="flex-1 min-h-0">{renderRoute(route)}</main>
+      <main className="flex-1 min-h-0">{renderRoute(route, onRoute)}</main>
       {palette}
     </div>
   )
@@ -169,11 +169,14 @@ function AppShell({
  * keyed on their target: following a second link replaces the view instead of
  * reconciling it against the first one's state.
  */
-function renderRoute(route: Route): React.ReactNode {
+function renderRoute(route: Route, onRoute: (route: Route) => void): React.ReactNode {
+  const openTicket = (uuid: string) => onRoute({ kind: 'ticket', uuid })
   switch (route.kind) {
-    case 'page':   return PAGE_VIEWS[route.page]
+    case 'page':   return route.page === 'graph'
+      ? <Graph onOpenTicket={openTicket} />
+      : PAGE_VIEWS[route.page]
     case 'ticket': return <TicketView key={route.uuid} initialTicketUuid={route.uuid} />
-    case 'view':   return <Graph key={route.viewUuid} initialViewUuid={route.viewUuid} />
+    case 'view':   return <Graph key={route.viewUuid} initialViewUuid={route.viewUuid} onOpenTicket={openTicket} />
     case 'overlay': return null // handled above — overlays own the whole frame
   }
 }

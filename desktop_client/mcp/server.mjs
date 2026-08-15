@@ -79,6 +79,20 @@ const HANDLE = { type: 'string', enum: ['left', 'right', 'top', 'bottom'], descr
 
 /** name == bridge method. Order grouped for readability in tools/list. */
 const TOOLS = [
+  // --- Project context ---
+  {
+    name: 'getProjectContext',
+    // Written to be reached for, not merely available. Delivery is opt-in, so
+    // this description is the whole mechanism by which an agent learns the
+    // project's intent before it decides something on the user's behalf.
+    description:
+      "The project's stated intent: its north star and vision, as the user wrote them. " +
+      'Call this BEFORE making judgment calls a ticket does not settle on its own — ' +
+      'which approach to take, what to prioritise, where to draw a line. ' +
+      'It is how the user steers work they are not watching.',
+    inputSchema: schema({}),
+  },
+
   // --- Tickets ---
   { name: 'listTickets', description: 'List all tickets.', inputSchema: schema({}) },
   { name: 'getTicket', description: 'Get one ticket by uuid.', inputSchema: schema({ uuid: str('Ticket uuid') }, ['uuid']) },
@@ -120,7 +134,16 @@ const TOOLS = [
   { name: 'createView', description: 'Create a graph view.', inputSchema: schema({ name: str('View name') }, ['name']) },
   { name: 'renameView', description: 'Rename a graph view.', inputSchema: schema({ uuid: str('View uuid'), name: str('New name') }, ['uuid', 'name']) },
   { name: 'deleteView', description: 'Delete a graph view.', inputSchema: schema({ uuid: str('View uuid') }, ['uuid']) },
-  { name: 'getViewMap', description: 'Full snapshot of a view: { view, nodes (enriched), edges }.', inputSchema: schema({ viewUuid: str('View uuid') }, ['viewUuid']) },
+  {
+    name: 'getViewMap',
+    description:
+      'Full snapshot of a graph view: { view, nodes, edges }. Nodes carry the ticket id, ' +
+      'title, type and status. Every edge is typed: "blocked-by" points blocker to blocked ' +
+      'and is how the graph says what must come first; "relates-to" couples tickets into ' +
+      'one piece of work; "visual" is a hand-drawn line carrying no meaning. ' +
+      'Read this to understand the order of work before planning it.',
+    inputSchema: schema({ viewUuid: str('View uuid') }, ['viewUuid']),
+  },
 
   // --- View nodes ---
   { name: 'listViewNodes', description: 'List nodes in a view, enriched with ticket id/title/type/status and x,y.', inputSchema: schema({ viewUuid: str('View uuid') }, ['viewUuid']) },

@@ -17,7 +17,8 @@
  */
 
 import { createServer, type Server } from 'node:http'
-import { dispatchBridge } from '../bridge'
+import { dispatchBridge, activeProjectStamp } from '../bridge'
+import { validateToken } from './token'
 
 const PORT = 49152  // first ephemeral port — avoids clashing with common dev servers
 
@@ -25,6 +26,19 @@ let server: Server | null = null
 
 function json(body: unknown): string {
   return JSON.stringify(body)
+}
+
+/**
+ * Extracts and checks the bearer token.
+ *
+ * Until this round the header above the file described exactly this and
+ * nothing performed it: the token was minted, written to disk at 0600, and
+ * never read, so any local process could drive the app's data over HTTP.
+ * `validateToken` does the constant-time comparison.
+ */
+function authenticated(header: string | undefined): boolean {
+  if (!header?.startsWith('Bearer ')) return false
+  return validateToken(header.slice('Bearer '.length).trim())
 }
 
 export function startHttpServer(): void {
@@ -37,6 +51,11 @@ export function startHttpServer(): void {
       return
     }
 
+    if (!authenticated(req.headers.authorization)) {
+      res.writeHead(401).end(json({ error: 'Unauthorized' }))
+      return
+    }
+
     // Read body
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -46,8 +65,10 @@ export function startHttpServer(): void {
           method: string
           args?: unknown
         }
-        const result = dispatchBridge(body.method, body.args ?? null)
-        res.writeHead(200).end(json({ result }))
+        // caller: 'http' is what makes the gate's HTTP branch live — it was
+        // never set before, so that branch was unreachable code.
+        const result = dispatchBridge(body.method, body.args ?? null, { caller: 'http' })
+        res.writeHead(200).end(json({ result, project: activeProjectStamp() }))
       } catch (err) {
         res.writeHead(400).end(json({ error: (err as Error).message }))
       }

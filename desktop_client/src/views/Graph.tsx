@@ -131,9 +131,10 @@ interface CanvasProps {
   relations: TicketRelation[]
   refreshRelations: () => Promise<void>
   onNodeIdsChange: (ids: Set<string>) => void
+  onOpenTicket?: (uuid: string) => void
 }
 
-function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: CanvasProps) {
+function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange, onOpenTicket }: CanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const { screenToFlowPosition, getNodes } = useReactFlow()
@@ -167,7 +168,7 @@ function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: Canv
       const active = new Set(getTicketStore().getActiveSnapshot().map((t) => t.uuid))
       const flowNodes: Node[] = dbNodes
         .filter((n) => active.has(n.ticket_uuid))
-        .map((n) => ({ id: n.ticket_uuid, type: 'ticket', position: { x: n.x, y: n.y }, data: {} }))
+        .map((n) => ({ id: n.ticket_uuid, type: 'ticket', position: { x: n.x, y: n.y }, data: { onOpen: onOpenTicket } }))
 
       const nodeSet = new Set(flowNodes.map((n) => n.id))
       const visualEdges = (dbEdges as GraphViewEdge[])
@@ -432,7 +433,7 @@ function Canvas({ viewUuid, relations, refreshRelations, onNodeIdsChange }: Canv
         if (existing.has(singleUuid)) return // already on canvas — leave it put
         try {
           await graphClient.upsertNode(viewUuid, singleUuid, pos.x, pos.y)
-          setNodes((nds) => [...nds, { id: singleUuid, type: 'ticket', position: pos, data: {} }])
+          setNodes((nds) => [...nds, { id: singleUuid, type: 'ticket', position: pos, data: { onOpen: onOpenTicket } }])
         } catch { /* */ }
         return
       }
@@ -608,9 +609,11 @@ interface GraphProps {
    * reaches this component.
    */
   initialViewUuid?: string
+  /** Opens a ticket from the canvas. Double-click: a single click selects. */
+  onOpenTicket?: (uuid: string) => void
 }
 
-export function Graph({ initialViewUuid }: GraphProps = {}) {
+export function Graph({ initialViewUuid, onOpenTicket }: GraphProps = {}) {
   const [views, setViews] = useState<GraphView[]>([])
   const [activeViewUuid, setActiveViewUuid] = useState<string | null>(null)
   const [relations, setRelations] = useState<TicketRelation[]>([])
@@ -742,7 +745,7 @@ export function Graph({ initialViewUuid }: GraphProps = {}) {
         <div className="flex-1 relative">
           {activeView ? (
             <ReactFlowProvider>
-              <Canvas key={activeView.uuid} viewUuid={activeView.uuid} relations={relations} refreshRelations={refreshRelations} onNodeIdsChange={setCanvasNodeIds} />
+              <Canvas key={activeView.uuid} viewUuid={activeView.uuid} relations={relations} refreshRelations={refreshRelations} onNodeIdsChange={setCanvasNodeIds} onOpenTicket={onOpenTicket} />
             </ReactFlowProvider>
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading…</div>
