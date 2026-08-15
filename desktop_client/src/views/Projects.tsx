@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { switchToProject } from '@/lib/projectSwitch'
+import { readableError } from '@/lib/ipcError'
 import type { Project } from '@/types/electron'
 
 interface ProjectsProps {
@@ -384,20 +385,4 @@ function DeleteDialog({ project, busy, onClose, onDelete }: DeleteDialogProps) {
       </DialogContent>
     </Dialog>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
-
-/**
- * Electron re-throws a main-process error as
- * `Error invoking remote method 'project:create': Error: <message>`. The
- * message after the last plumbing prefix is the one written for a human —
- * show that, and never let a rejected promise disappear silently.
- */
-function readableError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err)
-  const unwrapped = /Error:\s*(.+)$/.exec(raw)?.[1] ?? raw
-  return unwrapped.trim() || 'Something went wrong.'
 }

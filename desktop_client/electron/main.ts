@@ -20,6 +20,7 @@ import { notifyTicketUpdated } from './ipc/notify'
 import { initToken } from './transports/token'
 import { startHttpServer, stopHttpServer } from './transports/http'
 import { startUnixServer, stopUnixServer } from './transports/unix'
+import { initDeepLinks, handleSecondInstanceArgv, setDeepLinkWindow } from './deepLink'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -83,6 +84,10 @@ function createWindow() {
   win.on('resized', persistBounds)
   win.on('moved', persistBounds)
 
+  // Links are held until this window's renderer subscribes — including the one
+  // that launched the app, which arrived long before there was a window.
+  setDeepLinkWindow(win)
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
   } else {
@@ -95,7 +100,14 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  // Must run before `whenReady`: on macOS a cold-start link is delivered as an
+  // `open-url` event that fires earlier than that, and a handler registered
+  // afterwards never sees it.
+  initDeepLinks()
+
+  app.on('second-instance', (_event, argv) => {
+    // Windows/Linux hand a warm link to the running instance as argv.
+    handleSecondInstanceArgv(argv)
     if (!win) return
     if (win.isMinimized()) win.restore()
     win.focus()

@@ -16,6 +16,15 @@ export default defineConfig({
     // Default env stays node (electron/main-process tests). Component tests
     // opt into jsdom with a `// @vitest-environment jsdom` docblock.
     setupFiles: ['./src/test/setup.ts'],
+    server: {
+      deps: {
+        // The editor pulls in novel, whose embed support imports react-tweet's
+        // CSS modules. Externalised, Node loads those files raw and throws on
+        // the extension; inlined, Vite transforms them away as it does in the
+        // app. Needed by any test that renders the shell.
+        inline: ['novel', 'react-tweet'],
+      },
+    },
   },
   plugins: [
     tailwindcss(),

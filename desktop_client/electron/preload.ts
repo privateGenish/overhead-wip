@@ -25,6 +25,24 @@ contextBridge.exposeInMainWorld('db', {
   },
 })
 
+contextBridge.exposeInMainWorld('deepLink', {
+  /**
+   * Subscribes to `overhead://` links. Subscribing also tells the main process
+   * a renderer is listening, which releases anything buffered during boot —
+   * the link that launched the app arrives before this renderer exists.
+   */
+  onOpen: (callback: (url: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, url: string) => {
+      callback(url)
+    }
+    ipcRenderer.on('deep-link:open', listener)
+    ipcRenderer.send('deep-link:ready')
+    return () => {
+      ipcRenderer.removeListener('deep-link:open', listener)
+    }
+  },
+})
+
 contextBridge.exposeInMainWorld('projects', {
   list:   () => ipcRenderer.invoke('project:list'),
   active: () => ipcRenderer.invoke('project:active'),
