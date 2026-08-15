@@ -1,5 +1,5 @@
 import { Ticket } from '../ticket'
-import type { TicketStatus } from '../ticket'
+import type { TicketInit, TicketStatus } from '../ticket'
 
 /** Status flow for Execute tickets. */
 export interface ExecuteStatus extends TicketStatus {
@@ -23,6 +23,7 @@ export class ExecuteTicket extends Ticket {
             data.backlog,
             data.description,
             data.archived,
+            data.pinned,
           ),
       ),
     )
@@ -32,13 +33,16 @@ export class ExecuteTicket extends Ticket {
    * Creates a brand-new Execute ticket. Generates `uuid`/`id` and seeds the
    * initial status to `Draft`.
    *
-   * @param title  Free-text title.
+   * @param init  The state the ticket starts with — persisted in one write.
    */
-  static async create(title: string): Promise<ExecuteTicket> {
+  static async create(init: TicketInit): Promise<ExecuteTicket> {
     const uuid = await Ticket.generateUuid()
     const id = await Ticket.generateId()
     const ticket = Ticket.construct(
-      () => new ExecuteTicket(uuid, id, title, { value: 'Draft' }),
+      () => new ExecuteTicket(
+        uuid, id, init.title, { value: 'Draft' },
+        init.backlog ?? false, init.description ?? '', false, init.pinned ?? false,
+      ),
     )
     await Ticket.persist(ticket)
     return ticket

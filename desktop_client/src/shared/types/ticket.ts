@@ -26,6 +26,7 @@ export const ticketDataSchema = z.object({
   type: ticketTypeSchema,
   status: ticketStatusSchema,
   backlog: z.boolean(),
+  pinned: z.boolean().default(false),
   description: z.string().default(''),
   archived: z.boolean().default(false),
 })
@@ -37,6 +38,20 @@ export const ticketDataSchema = z.object({
 export type TicketStatus = z.infer<typeof ticketStatusSchema>
 export type TicketType = z.infer<typeof ticketTypeSchema>
 export type TicketData = z.infer<typeof ticketDataSchema>
+
+/**
+ * The state a brand-new ticket starts life with.
+ *
+ * Everything a create form can collect arrives here in one piece, so the first
+ * row written to storage is already complete — nothing is patched onto the
+ * ticket afterwards, and nothing the form collected can be silently dropped.
+ */
+export interface TicketInit {
+  title: string
+  description?: string
+  backlog?: boolean
+  pinned?: boolean
+}
 
 /** Returns true if `raw` is a valid `TicketData` object. */
 export function isTicketData(raw: unknown): raw is TicketData {
@@ -105,6 +120,7 @@ export abstract class Ticket {
   title: string
   status: TicketStatus
   backlog: boolean    // true = ticket is parked in the backlog
+  pinned: boolean     // true = the user is keeping this one in sight
   description: string // markdown body
   archived: boolean   // true = hidden from regular views
 
@@ -127,6 +143,7 @@ export abstract class Ticket {
     backlog: boolean = false,
     description: string = '',
     archived: boolean = false,
+    pinned: boolean = false,
   ) {
     if (!Ticket.#constructing) {
       throw new Error('Use a subclass create() or Ticket.load() — not new.')
@@ -139,6 +156,7 @@ export abstract class Ticket {
     this.backlog = backlog
     this.description = description
     this.archived = archived
+    this.pinned = pinned
   }
 
   // --- Static setup (called by the store at startup) ---
@@ -254,6 +272,11 @@ export abstract class Ticket {
     this.#changed()
   }
 
+  setPinned(pinned: boolean): void {
+    this.pinned = pinned
+    this.#changed()
+  }
+
   setDescription(description: string): void {
     this.description = description
     this.#changed()
@@ -284,6 +307,7 @@ export abstract class Ticket {
       type: this.type,
       status: this.status,
       backlog: this.backlog,
+      pinned: this.pinned,
       description: this.description,
       archived: this.archived,
     }

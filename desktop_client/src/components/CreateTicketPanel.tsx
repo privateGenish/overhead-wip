@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { getTicketStore } from '@/lib/ticketStore'
-import { TICKET_TYPES, type TicketType } from '@/shared/types'
+import { TICKET_TYPES, type Ticket, type TicketType } from '@/shared/types'
 import { Maximize2, X } from 'lucide-react'
 import './ticket-editor.css'
 
@@ -22,11 +22,17 @@ const extensions = [
 
 interface CreateTicketPanelProps {
   fixedType?: TicketType
+  /**
+   * Hands the new ticket to the host so it can open it. Creation is meant to
+   * drop you into the detail view to keep writing, and the host owns which
+   * ticket is open.
+   */
+  onCreated?: (ticket: Ticket) => void
 }
 
 type Mode = 'collapsed' | 'expanded' | 'fullPage'
 
-export function CreateTicketPanel({ fixedType }: CreateTicketPanelProps) {
+export function CreateTicketPanel({ fixedType, onCreated }: CreateTicketPanelProps) {
   const [mode, setMode] = useState<Mode>('collapsed')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -50,15 +56,22 @@ export function CreateTicketPanel({ fixedType }: CreateTicketPanelProps) {
     setBacklog(false)
   }
 
+  /**
+   * Everything the form collected goes in as one piece and the ticket comes
+   * back out — no hunting for what was just written, and no field left behind
+   * (the backlog flag used to be).
+   */
   async function create() {
     const trimmed = title.trim()
     if (!trimmed || !type) return
-    await getTicketStore().create(type, trimmed)
-    // setDescription on the new ticket via store
-    const tickets = getTicketStore().getSnapshot()
-    const created = tickets[tickets.length - 1]
-    if (description.trim()) created.setDescription(description)
+    const created = await getTicketStore().create({
+      type,
+      title: trimmed,
+      description: description.trim() ? description : '',
+      backlog,
+    })
     collapse()
+    onCreated?.(created)
   }
 
   function onTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

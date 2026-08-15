@@ -7,6 +7,7 @@ interface TicketRowResponse {
   type: string
   status: string
   backlog: 0 | 1
+  pinned: 0 | 1
   description: string
   archived: 0 | 1
   created_at: number
@@ -21,20 +22,22 @@ function rowToTicketData(row: TicketRowResponse): TicketData {
     type: row.type as TicketData['type'],
     status: { value: row.status },
     backlog: row.backlog === 1,
+    pinned: row.pinned === 1,
     description: row.description,
     archived: row.archived === 1,
   }
 }
 
 const UPSERT_SQL = `
-  INSERT INTO tickets (uuid, id, title, type, status, backlog, description, archived, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO tickets (uuid, id, title, type, status, backlog, pinned, description, archived, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(uuid) DO UPDATE SET
     id          = excluded.id,
     title       = excluded.title,
     type        = excluded.type,
     status      = excluded.status,
     backlog     = excluded.backlog,
+    pinned      = excluded.pinned,
     description = excluded.description,
     archived    = excluded.archived,
     updated_at  = excluded.updated_at
@@ -45,7 +48,7 @@ class TicketClient {
     const now = Date.now()
     await window.db.ticket(UPSERT_SQL, [
       data.uuid, data.id, data.title, data.type,
-      data.status.value, data.backlog ? 1 : 0,
+      data.status.value, data.backlog ? 1 : 0, data.pinned ? 1 : 0,
       data.description, data.archived ? 1 : 0,
       now, now,
     ])

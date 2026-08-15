@@ -20,6 +20,19 @@ export function validateTicketSql(sql: string): void {
   }
 }
 
+/**
+ * Drops the mentions a ticket *makes*.
+ *
+ * `mentions.target_uuid` has a foreign key, so mentions *of* a deleted ticket
+ * cascade on their own. The source side cannot — it spans tickets and notes —
+ * so a deleted ticket would otherwise leave its outbound backlinks behind,
+ * pointing out of a document that no longer exists.
+ */
+function clearOutboundMentions(uuid: string | undefined): void {
+  if (!uuid) return
+  runSql('DELETE FROM mentions WHERE source_type = ? AND source_uuid = ?', ['ticket', uuid])
+}
+
 /** Reads a ticket's current description straight from SQLite. */
 function currentDescription(uuid: string): string | null {
   const rows = runSql('SELECT description FROM tickets WHERE uuid = ? LIMIT 1', [uuid]) as
@@ -68,8 +81,10 @@ export function runTicketSql(sql: string, params: unknown[] = []): unknown {
   validateTicketSql(sql)
   if (DELETE_ALL_RE.test(sql)) {
     vaultClear()
+    runSql('DELETE FROM mentions WHERE source_type = ?', ['ticket'])
   } else if (DELETE_RE.test(sql)) {
     vaultDelete(params[0] as string)
+    clearOutboundMentions(params[0] as string | undefined)
   }
   const result = runSql(sql, params)
   if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql)) {

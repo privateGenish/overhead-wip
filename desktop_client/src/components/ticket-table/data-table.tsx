@@ -37,9 +37,9 @@ declare module '@tanstack/react-table' {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
+  /** The filters the view starts with, and the ones Reset returns to. */
   defaultColumnFilters?: ColumnFiltersState
   hideTypeFilter?: boolean
-  showBacklogFilter?: boolean
   fixedType?: TicketType
   onOpenTicket?: (uuid: string) => void
 }
@@ -49,7 +49,6 @@ export function DataTable<TData, TValue>({
   data,
   defaultColumnFilters = [],
   hideTypeFilter = false,
-  showBacklogFilter = false,
   fixedType,
   onOpenTicket,
 }: DataTableProps<TData, TValue>) {
@@ -84,7 +83,7 @@ export function DataTable<TData, TValue>({
       <DataTableToolbar
         table={table}
         hideTypeFilter={hideTypeFilter}
-        showBacklogFilter={showBacklogFilter}
+        defaultColumnFilters={defaultColumnFilters}
         fixedType={fixedType}
       />
       <div className="overflow-hidden rounded-md border">
