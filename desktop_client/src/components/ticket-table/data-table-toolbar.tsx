@@ -1,4 +1,4 @@
-import { type Table } from '@tanstack/react-table'
+import { type ColumnFiltersState, type Table } from '@tanstack/react-table'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -55,33 +55,38 @@ const allStatusOptions = [
 interface DataTableToolbarProps<TData> {
   table: Table<TData>
   hideTypeFilter?: boolean
-  showBacklogFilter?: boolean
+  /** The view's starting filters — what Reset goes back to, not nothing. */
+  defaultColumnFilters?: ColumnFiltersState
   fixedType?: TicketType
+}
+
+/** Order-insensitive comparison — filters arrive in interaction order. */
+function sameFilters(a: ColumnFiltersState, b: ColumnFiltersState): boolean {
+  if (a.length !== b.length) return false
+  return a.every((filter) => {
+    const other = b.find((candidate) => candidate.id === filter.id)
+    return other !== undefined && JSON.stringify(other.value) === JSON.stringify(filter.value)
+  })
 }
 
 export function DataTableToolbar<TData>({
   table,
   hideTypeFilter = false,
-  showBacklogFilter = false,
+  defaultColumnFilters = [],
   fixedType,
 }: DataTableToolbarProps<TData>) {
   const columnFilters = table.getState().columnFilters
   const backlogColumn = table.getColumn('backlog')
   const backlogFilter = backlogColumn?.getFilterValue() as string[] | undefined
   const showBacklog = !backlogFilter?.includes('false')
-  const hasDefaultBacklogFilter =
-    showBacklogFilter &&
-    backlogFilter?.length === 1 &&
-    backlogFilter[0] === 'false'
-  const isFiltered =
-    columnFilters.length > 0 &&
-    !(columnFilters.length === 1 && hasDefaultBacklogFilter)
+  // "Filtered" means "away from where this view starts", so a view whose
+  // default already hides backlog does not offer a Reset that does nothing.
+  const isFiltered = !sameFilters(columnFilters, defaultColumnFilters)
 
   const statusOptions = fixedType ? statusOptionsByType[fixedType] : allStatusOptions
 
   function resetFilters() {
-    table.resetColumnFilters()
-    if (showBacklogFilter) backlogColumn?.setFilterValue(['false'])
+    table.setColumnFilters(defaultColumnFilters)
   }
 
   return (
@@ -105,7 +110,9 @@ export function DataTableToolbar<TData>({
           </Button>
         )}
       </div>
-      {showBacklogFilter && backlogColumn && (
+      {/* Every view gets the toggle — the All view used to show backlog
+          tickets with no control to take them away. */}
+      {backlogColumn && (
         <label className="ml-4 flex h-8 shrink-0 items-center gap-2 rounded-md px-3 text-sm">
           <Switch
             checked={showBacklog}

@@ -1,5 +1,5 @@
 import { Ticket } from '../ticket'
-import type { TicketStatus } from '../ticket'
+import type { TicketInit, TicketStatus } from '../ticket'
 
 /** Status flow for Feature tickets. */
 export interface FeatureStatus extends TicketStatus {
@@ -23,6 +23,7 @@ export class FeatureTicket extends Ticket {
             data.backlog,
             data.description,
             data.archived,
+            data.pinned,
           ),
       ),
     )
@@ -32,13 +33,16 @@ export class FeatureTicket extends Ticket {
    * Creates a brand-new Feature ticket. Generates `uuid`/`id` and seeds the
    * initial status to `Idea`.
    *
-   * @param title  Free-text title.
+   * @param init  The state the ticket starts with — persisted in one write.
    */
-  static async create(title: string): Promise<FeatureTicket> {
+  static async create(init: TicketInit): Promise<FeatureTicket> {
     const uuid = await Ticket.generateUuid()
     const id = await Ticket.generateId()
     const ticket = Ticket.construct(
-      () => new FeatureTicket(uuid, id, title, { value: 'Idea' }),
+      () => new FeatureTicket(
+        uuid, id, init.title, { value: 'Idea' },
+        init.backlog ?? false, init.description ?? '', false, init.pinned ?? false,
+      ),
     )
     await Ticket.persist(ticket)
     return ticket

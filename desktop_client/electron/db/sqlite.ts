@@ -122,6 +122,7 @@ export interface TicketRow {
   type: string
   status: string
   backlog: 0 | 1
+  pinned: 0 | 1
   description: string
   archived: 0 | 1
   created_at: number

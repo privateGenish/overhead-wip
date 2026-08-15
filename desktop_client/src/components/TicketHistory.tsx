@@ -10,6 +10,13 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { historyClient, type TicketVersion } from '@/lib/historyClient'
 
+/**
+ * How many versions the sheet shows. Storage keeps every snapshot — they are
+ * small text and this is a single-user app — but a list nobody can scan is not
+ * worth rendering, so the *display* is what gets bounded.
+ */
+export const HISTORY_DISPLAY_LIMIT = 50
+
 interface TicketHistoryProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -37,7 +44,9 @@ export function TicketHistory({ open, onOpenChange, ticketUuid, onRestore }: Tic
   }, [open, ticketUuid])
 
   const loading = !loaded || loaded.uuid !== ticketUuid
-  const versions = loading ? [] : loaded.versions.slice(1)
+  // The newest snapshot is the ticket's current state, not a version to go back
+  // to, so it is dropped first; the cap applies to what is left.
+  const versions = loading ? [] : loaded.versions.slice(1, 1 + HISTORY_DISPLAY_LIMIT)
 
   function restore(version: TicketVersion) {
     onRestore(version.description)
@@ -85,6 +94,11 @@ export function TicketHistory({ open, onOpenChange, ticketUuid, onRestore }: Tic
                 </li>
               ))}
             </ol>
+          )}
+          {!loading && loaded.versions.length - 1 > HISTORY_DISPLAY_LIMIT && (
+            <p className="py-4 text-center text-xs text-muted-foreground">
+              Showing the {HISTORY_DISPLAY_LIMIT} most recent versions.
+            </p>
           )}
         </div>
       </SheetContent>

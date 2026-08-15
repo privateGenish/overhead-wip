@@ -61,6 +61,7 @@ function buildFrontmatter(ticket: TicketRow): string {
     `type: ${ticket.type}`,
     `status: ${ticket.status}`,
     `backlog: ${ticket.backlog === 1}`,
+    `pinned: ${ticket.pinned === 1}`,
     '---',
   ].join('\n')
 }

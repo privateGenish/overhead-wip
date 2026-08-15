@@ -5,7 +5,7 @@ import {
   ExploreTicket,
   FeatureTicket,
 } from '@/shared/types'
-import type { TicketType } from '@/shared/types'
+import type { TicketInit, TicketType } from '@/shared/types'
 import { statusForType } from '@/shared/types'
 import { loadTickets } from './tickets'
 import { ticketClient } from './ticketClient'
@@ -137,8 +137,17 @@ export class TicketStore {
     this.#notify()
   }
 
-  async create(type: TicketType, title: string): Promise<Ticket> {
-    const ticket = await factories[type].create(title)
+  /**
+   * Creates a ticket from the state a form collected, and hands it back.
+   *
+   * The full initial state goes in, so the created row is complete on its first
+   * write and the caller never has to go looking for what it just made. The
+   * previous shape took only a type and a title, which left callers finding the
+   * new ticket by taking the last element of the snapshot and patching the rest
+   * onto it — fragile, and it silently dropped the backlog flag.
+   */
+  async create(init: TicketInit & { type: TicketType }): Promise<Ticket> {
+    const ticket = await factories[init.type].create(init)
     this.#track(ticket)
     this.#tickets = [...this.#tickets, ticket]
     this.#notify()

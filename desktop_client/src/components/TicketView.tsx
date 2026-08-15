@@ -7,10 +7,20 @@ import { toRows } from '@/lib/tickets'
 import { useTickets } from '@/lib/ticketStore'
 import type { TicketType } from '@/shared/types'
 import type { TicketRow } from '@/components/ticket-table/schema'
+import type { ColumnFiltersState } from '@tanstack/react-table'
+
+/** Backlog is opt-in everywhere: hidden until the toggle asks for it. */
+const HIDE_BACKLOG: ColumnFiltersState = [{ id: 'backlog', value: ['false'] }]
 
 interface TicketViewProps {
   filter?: (ticket: TicketRow) => boolean
   fixedType?: TicketType
+  /**
+   * Opts out of the backlog-hidden default. Only the Backlog view sets it —
+   * backlog tickets are that view's entire content, so hiding them by default
+   * would leave it empty.
+   */
+  showsBacklog?: boolean
   /**
    * Opens straight into this ticket — a deep link's landing point. Seeds the
    * selection rather than controlling it, so closing the detail still returns
@@ -20,7 +30,9 @@ interface TicketViewProps {
   initialTicketUuid?: string
 }
 
-export function TicketView({ filter, fixedType, initialTicketUuid }: TicketViewProps) {
+export function TicketView({
+  filter, fixedType, showsBacklog = false, initialTicketUuid,
+}: TicketViewProps) {
   const [selectedUuid, setSelectedUuid] = useState<string | null>(initialTicketUuid ?? null)
 
   const tickets = useTickets()
@@ -40,15 +52,17 @@ export function TicketView({ filter, fixedType, initialTicketUuid }: TicketViewP
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
-      <CreateTicketPanel fixedType={fixedType} />
+      {/* Creating opens the ticket, through the same selection a row click
+          drives — the detail view is where the thought gets fleshed out. */}
+      <CreateTicketPanel
+        fixedType={fixedType}
+        onCreated={(ticket) => setSelectedUuid(ticket.uuid)}
+      />
       <DataTable
         columns={columns}
         data={data}
-        defaultColumnFilters={fixedType ? [
-          { id: 'backlog', value: ['false'] },
-        ] : []}
+        defaultColumnFilters={showsBacklog ? [] : HIDE_BACKLOG}
         hideTypeFilter={Boolean(fixedType)}
-        showBacklogFilter={Boolean(fixedType)}
         fixedType={fixedType}
         onOpenTicket={setSelectedUuid}
       />
