@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { runSql } from '../db/sqlite'
+import { syncMentions, clearMentionsFrom } from '../db/mentions'
 import { noteVaultWrite, noteVaultDelete } from '../vault/vaultManager'
 
 const NOTE_TABLE_RE = /\bnotes\b/i
@@ -29,7 +30,15 @@ export function validateNoteSql(sql: string): void {
  */
 function clearOutboundMentions(uuid: string | undefined): void {
   if (!uuid) return
-  runSql('DELETE FROM mentions WHERE source_type = ? AND source_uuid = ?', ['note', uuid])
+  clearMentionsFrom('note', uuid)
+}
+
+/** Reads a note's current body straight from SQLite. */
+function currentBody(uuid: string): string | null {
+  const rows = runSql('SELECT body FROM notes WHERE uuid = ? LIMIT 1', [uuid]) as
+    | { body: string }[]
+    | undefined
+  return rows?.[0]?.body ?? null
 }
 
 /**
@@ -52,6 +61,7 @@ export function runNoteSql(sql: string, params: unknown[] = []): unknown {
 
   if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql) && uuid) {
     noteVaultWrite(uuid) // eager markdown mirror — the renderer already debounced
+    syncMentions('note', uuid, currentBody(uuid) ?? '') // §2.1: notes mention too
   }
   return result
 }

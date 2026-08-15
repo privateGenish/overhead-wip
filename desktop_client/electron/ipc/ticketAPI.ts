@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { runSql, historyInsert } from '../db/sqlite'
+import { syncMentions, clearMentionsFrom } from '../db/mentions'
 import { vaultWrite, vaultDelete, vaultClear } from '../vault/vaultManager'
 
 const TICKET_TABLE_RE = /\btickets\b/i
@@ -30,7 +31,7 @@ export function validateTicketSql(sql: string): void {
  */
 function clearOutboundMentions(uuid: string | undefined): void {
   if (!uuid) return
-  runSql('DELETE FROM mentions WHERE source_type = ? AND source_uuid = ?', ['ticket', uuid])
+  clearMentionsFrom('ticket', uuid)
 }
 
 /** Reads a ticket's current description straight from SQLite. */
@@ -90,7 +91,13 @@ export function runTicketSql(sql: string, params: unknown[] = []): unknown {
   if (!SELECT_RE.test(sql) && !DELETE_RE.test(sql)) {
     const uuid = params[0] as string | undefined
     onTicketWritten(uuid)      // debounced history snapshot
-    if (uuid) vaultWrite(uuid) // eager markdown mirror — reflects current state at once
+    if (uuid) {
+      vaultWrite(uuid) // eager markdown mirror — reflects current state at once
+      // Backlinks are re-derived from the text that was actually stored, not
+      // from the parameter, so an UPDATE touching only the title still leaves
+      // the projection describing the description SQLite now holds.
+      syncMentions('ticket', uuid, currentDescription(uuid) ?? '')
+    }
   }
   return result
 }

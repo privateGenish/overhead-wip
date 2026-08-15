@@ -17,6 +17,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { closeSqlite, initSqlite } from '../db/sqlite'
+import { rebuildAllMentions } from '../db/mentions'
 import {
   getProject,
   listProjects,
@@ -72,7 +73,7 @@ export function getActiveProject(): ProjectRow | null {
  *
  * @throws if the project is not in the registry.
  */
-export function openProject(uuid: string): ProjectRow {
+export async function openProject(uuid: string): Promise<ProjectRow> {
   const project = getProject(uuid)
   if (!project) throw new Error(`Project "${uuid}" is not registered.`)
 
@@ -80,8 +81,15 @@ export function openProject(uuid: string): ProjectRow {
   fs.mkdirSync(vaultDir, { recursive: true })
 
   initSqlite(projectDbPath(uuid))
+  // The mentions table is a projection, so opening a project is a free chance
+  // to re-derive it from the documents themselves. It repairs the one case
+  // incremental extraction cannot: a mention written before its target ticket
+  // existed, whose target exists now.
+  rebuildAllMentions()
   initVault(vaultDir)
-  initVaultWatcher(vaultDir, notifyVaultTicket)
+  // Awaited: the watcher releases a native handle on close, and starting the
+  // next one before that lands can take the new event stream down with it.
+  await initVaultWatcher(vaultDir, notifyVaultTicket)
 
   active = project
   setActiveProjectUuid(uuid)
@@ -117,7 +125,7 @@ export async function closeProject(): Promise<void> {
  */
 export async function switchProject(uuid: string): Promise<ProjectRow> {
   await closeProject()
-  return openProject(uuid)
+  return await openProject(uuid)
 }
 
 /**

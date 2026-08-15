@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
+import type { EditorInstance } from 'novel'
 import { Markdown } from 'tiptap-markdown'
 import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -15,6 +16,7 @@ import {
 import { persistQueue } from '@/lib/persistQueue'
 import { noteClient, noteKey, type NoteData } from '@/lib/noteClient'
 import { readableError } from '@/lib/ipcError'
+import { MentionMenu } from '@/components/MentionMenu'
 import '@/components/ticket-editor.css'
 
 /** Editor extensions — the same set the ticket editor uses. */
@@ -220,6 +222,9 @@ interface NoteEditorProps {
 
 function NoteEditor({ note, onChange, onClose, onDelete }: NoteEditorProps) {
   const [confirming, setConfirming] = useState(false)
+  // Held only so the mention menu has something to attach to — the body itself
+  // is driven by `onUpdate`, as before.
+  const [editor, setEditor] = useState<EditorInstance | null>(null)
 
   // The title is uncontrolled for the same reason the ticket title is: the
   // value round-trips through the parent's state, and re-imposing it on every
@@ -264,6 +269,7 @@ function NoteEditor({ note, onChange, onClose, onDelete }: NoteEditorProps) {
               extensions={extensions}
               onCreate={({ editor }) => {
                 editor.commands.setContent(note.body, false)
+                setEditor(editor)
               }}
               onUpdate={({ editor }) => {
                 const markdown = (
@@ -276,6 +282,8 @@ function NoteEditor({ note, onChange, onClose, onDelete }: NoteEditorProps) {
               }}
             />
           </EditorRoot>
+          {/* A note can mention tickets too — the same plain-text reference. */}
+          <MentionMenu editor={editor} />
         </div>
       </div>
 
