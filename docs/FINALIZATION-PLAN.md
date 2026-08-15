@@ -64,7 +64,7 @@ Three passes, in order. **We are in Pass 1.**
 |---|---|---|
 | **1 — Shaping** | Walk every feature. For each: what it is today (grounded in the code), how it *should* be, what needs fixing. | ✅ **Complete** — 37 shaped, 1 deferred |
 | **2 — Compliance** | Re-iterate the shaped features and attach the architectural/technical rules the implementing agent must follow. | ✅ **Complete** |
-| **3 — Build** | Agentic implementation, sub-branch per unit, stop-and-verify at each merge. | 🔵 **Sequenced — 13 units, ready to start** |
+| **3 — Build** | Agentic implementation, sub-branch per unit, stop-and-verify at each merge. | ✅ **Complete — 13/13 merged** |
 
 Per-feature template used below:
 
@@ -1432,4 +1432,58 @@ Unit 4 rewrites the schema and discards existing data. This is **covered by the 
 
 ## Build log
 
-_Entries appended as units complete._
+**All 13 units complete and merged into `finalizing`.** 309 tests (from 75),
+`tsc -b` clean, and a packaged app that launches and renders.
+
+| # | Unit | Outcome |
+|---|---|---|
+| 1 | Green build | 15 type errors fixed; first packaged `.app` |
+| 2 | Test infra | jsdom + Testing Library |
+| 3 | Persistence + editor | 55 keystrokes → 1 write; no editor remount |
+| 4 | Project foundations | Per-project directories, lifecycle, explicit store init |
+| 5 | Project UI | Launcher, real navbar project |
+| 6 | Routing + deep links | `Route` model, `overhead://`, launcher boot state |
+| 7 | Ticket fixes | create() returns ticket, pin, backlog default, archived delete |
+| 8 | Notes | Model, `vault/notes/` mirroring, grid |
+| 9 | Mentions | Extraction, projection, `@` menu inserting plain text |
+| 10 | Search palette | ⌘K over title + id |
+| 11 | Agent surfaces | Typed graph edges, HTTP auth, project context, throttling |
+| 12 | Settings/theme/Vision | Theme toggle, account, Vision restyle |
+| 13 | Docs + final | Sanitization verified, packaging fixed, docs rewritten |
+
+### Things found during the build that the plan did not anticipate
+
+- **The packaged app had never rendered.** No electron-builder config existed,
+  so its output directory defaulted to `dist/` — where vite builds the
+  renderer — and builder excludes its own output directory, taking the
+  renderer with it. Every "the app boots" check in this round passed on a live
+  process; none proved a window drew anything. Found in Unit 13 by reading the
+  log instead of the process list.
+- **A risk test that guarded nothing.** The watcher-leak test passed against a
+  deliberately sabotaged teardown, because `initVaultWatcher` defensively
+  stops any existing watcher and masked the missing stop entirely. Rewritten
+  to assert the contract directly.
+- **Debouncing introduced a data-loss window.** Eager writes could never lose
+  work on quit; a 400ms debounce can. Closed with `beforeunload`/`pagehide`
+  flushes.
+- **Queued writes could fire against a detached ticket.** After a vault sync
+  or type change the store replaces the instance; a pending write closed over
+  the old one and would persist stale fields.
+- **The suite was ~30% red under parallel load** on one watcher test — the OS
+  dropping filesystem notifications, not a product defect. Every gate here is
+  "the suite is green", so it was worth the time to characterise and settle.
+- **Light mode, not dark, was the untested one.** Nothing had ever set the
+  `.dark` class, so the app had only ever rendered light. The plan recorded
+  this backwards.
+
+### Still open
+
+- **Typography**: the stated direction (Newsreader + Hanken Grotesk) and the
+  code (Geist) disagree. Flagged in `index.css`, deliberately not resolved —
+  it is a design decision.
+- **Deferred by design**: focus dashboard (**B1**), Kanban (**B3–B6**),
+  backlink read UI (**C10**), body search (**A4**), configurable vault path
+  (**E4**), bulk archive actions (**B7**).
+- **Not verified interactively**: anything visual. The editor's cursor and
+  undo behaviour, the palette and menus on screen, both themes' appearance.
+  Covered by tests where testable; a human still needs to look.
