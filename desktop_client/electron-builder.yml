@@ -1,0 +1,21 @@
+# Packaging configuration.
+#
+# The output directory MUST NOT be `dist/`.
+#
+# Vite builds the renderer into `dist/`, and electron-builder excludes its own
+# output directory from the package so it cannot pack itself recursively. With
+# both pointing at `dist/` — which was the default, since no config existed —
+# the renderer build was excluded along with it, and the packaged app started
+# up and then failed to load a `dist/index.html` that was not inside the asar.
+#
+# The app still launched, so a liveness check passed; nothing rendered.
+
+appId: com.overhead.app
+productName: Overhead
+
+directories:
+  output: release
+
+files:
+  - dist/**/*
+  - dist-electron/**/*

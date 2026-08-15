@@ -77,14 +77,19 @@ contextBridge, which is our one real security boundary.
 
 The trade-off holds **as long as all of these remain true**:
 
-- [ ] **Local, single-user app.** The DB is the user's own data. An "attacker"
+- [x] **Local, single-user app.** The DB is the user's own data. An "attacker"
       who controls the renderer is effectively the user, who could open
       `overhead.db` directly anyway — so raw SQL is **not a privilege
       escalation**, just a convenience.
-- [ ] **Rich text is sanitized.** No script execution from ticket content.
-      *(Unverified — see Follow-ups.)*
-- [ ] **No renderer-resident plugin ever sees `window.db`.** Plugins get
-      `window.bridge` only.
+- [x] **Rich text is sanitized.** No script execution from ticket content.
+      **VERIFIED 2026-08-15** — `src/components/editorSanitization.test.tsx`.
+      The protection is structural, not a filter: `tiptap-markdown` renders
+      markdown to HTML and ProseMirror parses it against the editor's schema,
+      so anything the schema does not define has nowhere to land. Tests cover
+      `<script>`, inline `onclick`, `<iframe>`, and `<img onerror>` — all
+      dropped — while headings, bold and `@OVH-123` mentions survive.
+- [x] **No renderer-resident plugin ever sees `window.db`.** Plugins get
+      `window.bridge` only. *(Still true — no plugin host exists.)*
 
 Under these conditions, raw SQL from the renderer grants nothing the renderer
 doesn't already legitimately have. The bridge then exists purely to give
@@ -112,8 +117,10 @@ These keep the blast radius small so we *can* lock it down later cheaply:
 
 ## Follow-ups (deferred, not scheduled)
 
-- [ ] Verify the markdown / rich-text render path is sanitized (most realistic
-      XSS → raw-SQL vector).
+- [x] ~~Verify the markdown / rich-text render path is sanitized~~ — **done**,
+      see the precondition above. This mattered more after the vault watcher
+      began ingesting externally-edited markdown and `@` mentions added a
+      second render path: both are untrusted input reaching the editor.
 - [ ] Decide whether raw SQL on Door 1 should eventually be gated behind a
       dev-only build flag, leaving production with parameterized/whitelisted ops.
 - [ ] Re-evaluate this whole document before shipping any renderer-resident

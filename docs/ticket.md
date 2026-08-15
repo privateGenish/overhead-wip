@@ -1,5 +1,23 @@
 # Ticket CRUD Pipeline
 
+> **Partly historical.** The layering below still holds, but three things
+> changed in the finalization round. Where this document and
+> [ARCHITECTURE.md](../desktop_client/docs/ARCHITECTURE.md) disagree, that one
+> is right.
+>
+> 1. **Writes are debounced.** A mutation updates memory and notifies its
+>    subscribers immediately; only the SQL write is deferred (~400ms, via
+>    `src/lib/persistQueue.ts`). Anything that reads what was written must
+>    `flush()` first — the history snapshot especially, which would otherwise
+>    record the previous text.
+> 2. **Storage is per project.** The database is
+>    `<userData>/projects/<project-uuid>/overhead.db`, not one global file, and
+>    `ticketStore` is explicitly initialised per project instead of being an
+>    import-time singleton.
+> 3. **`create()` takes full initial state and returns the ticket.** It no
+>    longer takes just `(type, title)`, and callers no longer find the new
+>    ticket by taking the last element of the store snapshot.
+
 SQLite is the source of truth. The renderer never touches the DB directly — all reads and writes go through the IPC bridge.
 
 ---
