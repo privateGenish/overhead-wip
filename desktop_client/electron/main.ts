@@ -12,6 +12,7 @@ import {
 } from './project/projectManager'
 import { registerGeneralAPI } from './ipc/generalAPI'
 import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
+import { registerNoteAPI } from './ipc/noteAPI'
 import { registerHistoryAPI } from './ipc/historyAPI'
 import { registerRelationsAPI } from './ipc/relationsAPI'
 import { registerGraphAPI } from './ipc/graphAPI'
@@ -127,6 +128,7 @@ if (!app.requestSingleInstanceLock()) {
 
     registerGeneralAPI()
     registerTicketAPI()
+    registerNoteAPI()
     registerHistoryAPI()
     registerRelationsAPI()
     registerGraphAPI()

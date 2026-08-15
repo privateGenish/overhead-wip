@@ -117,8 +117,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Waits for the watcher to land a description, polling until it does.
+ *
+ * The deadline is deliberately generous. What is being asserted is *that* the
+ * sync happens, never how quickly: chokidar sits behind a 100ms
+ * `awaitWriteFinish` window, and when the rest of the suite is running in
+ * parallel the filesystem event can arrive well after that. A 2s ceiling made
+ * this the one intermittently-red test in the suite — and a suite that reddens
+ * at random is worth less than the seconds a longer ceiling could cost, which
+ * is none, because the loop returns the moment the value appears.
+ */
 async function expectDescriptionWritten(expected: string): Promise<void> {
-  const deadline = Date.now() + 2_000
+  const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
     if (row().description === expected) return
     await sleep(25)
@@ -397,5 +408,28 @@ describe('vault watcher event → SQL write', () => {
 
     await expectDescriptionWritten('saved through watcher')
     expect(syncedUuids).toContain('t1')
+    // Timeout raised past vitest's 5s default so the generous poll deadline in
+    // `expectDescriptionWritten` is what governs, rather than being cut short.
+  }, 20_000)
+
+  // Inbound sync is a ticket-only path: it resolves a frontmatter uuid against
+  // the tickets table. A note landing in notes/ must be ignored outright rather
+  // than run through that lookup — this file names a real ticket's uuid, so a
+  // watcher that did not exclude the directory would overwrite it.
+  it('ignores markdown under notes/ instead of syncing it as a ticket', async () => {
+    upsert({ uuid: 't1', title: 'My Feature', description: 'untouched' })
+    const activeWatcher = initVaultWatcher(vaultDir)
+    await waitForWatcherReady(activeWatcher)
+
+    const notesDir = path.join(vaultDir, 'notes')
+    fs.mkdirSync(notesDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(notesDir, 'a-note.md'),
+      '---\nuuid: t1\ntitle: A note\n---\n\nNOTE BODY',
+      'utf8',
+    )
+    await sleep(400)
+
+    expect(row().description).toBe('untouched')
   })
 })

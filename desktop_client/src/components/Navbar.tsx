@@ -52,7 +52,16 @@ export function Navbar({ active, onSelect, projectName }: NavbarProps) {
 
       {/* Right side */}
       <div className="flex items-center gap-3">
-        <button className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+        {/* Notes sits outside the pill groups — it is a page all the same, so
+            it reports through the same onSelect and lights up the same way. */}
+        <button
+          onClick={() => onSelect('Notes')}
+          className={`text-sm transition-colors cursor-pointer ${
+            active === 'Notes'
+              ? 'text-foreground font-medium'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
           Notes
         </button>
         <DropdownMenu>

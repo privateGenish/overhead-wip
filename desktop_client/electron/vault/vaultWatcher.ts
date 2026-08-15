@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { watch, type FSWatcher } from 'chokidar'
 import { runSql } from '../db/sqlite'
+import { NOTES_DIRNAME } from './vaultManager'
 
 interface ParsedMarkdown {
   frontmatter: Record<string, string | boolean>
@@ -107,8 +108,21 @@ function isMarkdownFile(filename: string): boolean {
   return path.extname(filename).toLowerCase() === '.md'
 }
 
+/**
+ * True for anything under the vault's `notes/` directory.
+ *
+ * Inbound sync is a ticket-only path: `syncMarkdownToSqlite` resolves a
+ * frontmatter uuid against the `tickets` table, so a note file reaching it
+ * would be looked up as a ticket. Notes are excluded explicitly rather than
+ * left to fail that lookup — this round mirrors notes outward only.
+ */
+function isNotePath(filename: string): boolean {
+  return path.basename(path.dirname(filename)) === NOTES_DIRNAME
+}
+
 function handleVaultFile(filename: string, onSynced?: VaultSyncListener): void {
   if (!isMarkdownFile(filename)) return
+  if (isNotePath(filename)) return
   syncMarkdownToSqlite(filename, undefined, onSynced)
 }
 
@@ -124,6 +138,9 @@ export function initVaultWatcher(
       pollInterval: 25,
     },
     ignored: (filename, stats) => {
+      // Refuse the notes directory outright so chokidar never descends into it.
+      if (path.basename(filename) === NOTES_DIRNAME) return true
+      if (isNotePath(filename)) return true
       if (!stats?.isFile()) return false
       return !isMarkdownFile(filename)
     },

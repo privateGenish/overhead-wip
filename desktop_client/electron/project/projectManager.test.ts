@@ -21,7 +21,12 @@ vi.mock('electron', () => ({
 
 import { initGlobalDb, __resetGlobalDbForTests, listProjects, getActiveProjectUuid } from '../db/globalDb'
 import { isSqliteOpen, runSql, __resetSqliteForTests } from '../db/sqlite'
-import { __vaultIndexSize, __resetVaultForTests, getVaultDir } from '../vault/vaultManager'
+import {
+  __vaultIndexSize,
+  __noteVaultIndexSize,
+  __resetVaultForTests,
+  getVaultDir,
+} from '../vault/vaultManager'
 import { __isVaultWatcherActive } from '../vault/vaultWatcher'
 import {
   initProjectManager,
@@ -118,6 +123,24 @@ describe('open / close', () => {
     expect(__vaultIndexSize()).toBe(0)
     expect(isSqliteOpen()).toBe(false)
     expect(getVaultDir()).toBe('')
+  })
+
+  it('clears the notes vault index on close — the same leak, one directory down', async () => {
+    const project = createProjectWithDir('Overhead', 'OVH')
+    openProject(project.uuid)
+
+    runSql(
+      `INSERT INTO notes (uuid, title, body, created_at, updated_at)
+       VALUES ('n1', 'A note', 'body', 1, 1)`,
+    )
+    const { noteVaultWrite } = await import('../vault/vaultManager')
+    noteVaultWrite('n1')
+    expect(__noteVaultIndexSize()).toBeGreaterThan(0)
+
+    await closeProject()
+
+    // Carried across, this index would delete the next project's note files.
+    expect(__noteVaultIndexSize()).toBe(0)
   })
 
   it('is safe to close when nothing is open', async () => {

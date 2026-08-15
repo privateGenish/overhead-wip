@@ -16,7 +16,7 @@
  */
 
 export const PAGES = [
-  'home', 'product', 'explore', 'execute', 'backlog', 'all', 'graph',
+  'home', 'product', 'explore', 'execute', 'backlog', 'all', 'graph', 'notes',
 ] as const
 export type Page = (typeof PAGES)[number]
 
