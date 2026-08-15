@@ -43,6 +43,11 @@ describe('parseDeepLink', () => {
     }
   })
 
+  it('reads the notes page, which the navbar reaches by the same route', () => {
+    expect(parsed(`overhead://project/${PROJECT}/page/notes`).target)
+      .toEqual({ kind: 'page', page: 'notes' })
+  })
+
   it('reads a graph view link', () => {
     expect(parsed(`overhead://project/${PROJECT}/view/v-77`).target)
       .toEqual({ kind: 'view', viewUuid: 'v-77' })
@@ -79,7 +84,7 @@ describe('parseDeepLink — refusals', () => {
     ['overhead://project',   'no project uuid'],
     [`overhead://project/${PROJECT}`,            'no target'],
     [`overhead://project/${PROJECT}/ticket`,     'a target with no value'],
-    [`overhead://project/${PROJECT}/page/notes`, 'a page that does not exist'],
+    [`overhead://project/${PROJECT}/page/kanban`, 'a page that does not exist'],
     [`overhead://project/${PROJECT}/note/n-1`,   'a target kind that does not exist'],
     [`overhead://board/${PROJECT}/page/home`,    'a root that is not a project'],
     [`overhead://project/${PROJECT}/page/home/extra`, 'more segments than the scheme has'],
@@ -125,7 +130,7 @@ describe('formatDeepLink', () => {
 
 describe('navbar labels', () => {
   it('round-trips every page and overlay label', () => {
-    for (const label of ['Home', 'Product', 'Explore', 'Execute', 'Backlog', 'All', 'Graph']) {
+    for (const label of ['Home', 'Product', 'Explore', 'Execute', 'Backlog', 'All', 'Graph', 'Notes']) {
       const route = routeForNavLabel(label)
       expect(route).not.toBeNull()
       expect(navLabelForRoute(route!)).toBe(label)
@@ -141,7 +146,7 @@ describe('navbar labels', () => {
   })
 
   it('returns null for a label that is not a route', () => {
-    expect(routeForNavLabel('Notes')).toBeNull()
+    expect(routeForNavLabel('Kanban')).toBeNull()
     expect(routeForNavLabel('')).toBeNull()
   })
 })

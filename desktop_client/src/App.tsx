@@ -7,6 +7,7 @@ import { Product } from '@/views/Product'
 import { Backlog } from '@/views/Backlog'
 import { All } from '@/views/All'
 import { Graph } from '@/views/Graph'
+import { Notes } from '@/views/Notes'
 import { Settings } from '@/views/Settings'
 import { Archived } from '@/views/Archived'
 import { Projects } from '@/views/Projects'
@@ -34,6 +35,7 @@ const PAGE_VIEWS: Record<Page, React.ReactNode> = {
   backlog: <Backlog />,
   all: <All />,
   graph: <Graph />,
+  notes: <Notes />,
 }
 
 /** What an overlay view needs from the shell to render. */

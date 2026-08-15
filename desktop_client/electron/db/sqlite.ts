@@ -129,6 +129,14 @@ export interface TicketRow {
   updated_at: number
 }
 
+export interface NoteRow {
+  uuid: string
+  title: string
+  body: string
+  created_at: number
+  updated_at: number
+}
+
 // ---------------------------------------------------------------------------
 // History ops (main-process only — not exposed via IPC)
 // ---------------------------------------------------------------------------

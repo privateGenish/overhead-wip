@@ -25,6 +25,18 @@ describe('Navbar', () => {
     expect(onSelect).toHaveBeenCalledWith('Backlog')
   })
 
+  it('reports Notes through onSelect — it used to do nothing at all', async () => {
+    const onSelect = vi.fn()
+    render(<Navbar active="Home" onSelect={onSelect} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Notes' }))
+    expect(onSelect).toHaveBeenCalledWith('Notes')
+  })
+
+  it('marks Notes active like any other page', () => {
+    render(<Navbar active="Notes" onSelect={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Notes' })).toHaveClass('font-medium')
+  })
+
   it('labels the dropdown with the open project', () => {
     render(<Navbar active="Home" onSelect={() => {}} projectName="Shop" />)
     expect(screen.getByRole('button', { name: 'Shop' })).toBeInTheDocument()

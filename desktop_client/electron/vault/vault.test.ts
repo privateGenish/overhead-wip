@@ -398,4 +398,25 @@ describe('vault watcher event → SQL write', () => {
     await expectDescriptionWritten('saved through watcher')
     expect(syncedUuids).toContain('t1')
   })
+
+  // Inbound sync is a ticket-only path: it resolves a frontmatter uuid against
+  // the tickets table. A note landing in notes/ must be ignored outright rather
+  // than run through that lookup — this file names a real ticket's uuid, so a
+  // watcher that did not exclude the directory would overwrite it.
+  it('ignores markdown under notes/ instead of syncing it as a ticket', async () => {
+    upsert({ uuid: 't1', title: 'My Feature', description: 'untouched' })
+    const activeWatcher = initVaultWatcher(vaultDir)
+    await waitForWatcherReady(activeWatcher)
+
+    const notesDir = path.join(vaultDir, 'notes')
+    fs.mkdirSync(notesDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(notesDir, 'a-note.md'),
+      '---\nuuid: t1\ntitle: A note\n---\n\nNOTE BODY',
+      'utf8',
+    )
+    await sleep(400)
+
+    expect(row().description).toBe('untouched')
+  })
 })
