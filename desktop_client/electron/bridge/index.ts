@@ -12,6 +12,8 @@
  */
 
 import { authorize, throttle, type BridgeContext } from './gate'
+import { getProjectContext } from './context'
+import { getActiveProject } from '../project/projectManager'
 import { createTicket, getTicket, listTickets, updateTicket, deleteTicket } from './tickets'
 import { relate, blockBy, unrelate, listRelations } from './relations'
 import {
@@ -22,6 +24,7 @@ import {
 
 /** The complete public method surface exposed to external callers. */
 const methods = {
+  getProjectContext,
   createTicket,
   getTicket,
   listTickets,
@@ -59,4 +62,18 @@ export function dispatchBridge(method: string, args: unknown, ctx: BridgeContext
   authorize(method, ctx)
   throttle(method, ctx)
   return fn(args)
+}
+
+/**
+ * Which project the bridge is currently acting on.
+ *
+ * Scoping is implicit — no method takes a project argument, they all address
+ * whatever project is open. That is right for a single-user tool, but it means
+ * a caller cannot otherwise tell that the user switched projects mid-task and
+ * its next write will land somewhere else. Transports include this alongside
+ * every result so the switch is detectable rather than silent.
+ */
+export function activeProjectStamp(): { uuid: string; name: string } | null {
+  const active = getActiveProject()
+  return active ? { uuid: active.uuid, name: active.name } : null
 }

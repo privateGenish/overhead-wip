@@ -6,6 +6,8 @@
  * No token needed — socket ownership restricts access to the current user.
  *
  * Usage:
+ *   ovh context
+ *
  *   ovh tickets list
  *   ovh tickets create <title> <type>  [--status S] [--description D] [--backlog]
  *   ovh tickets get <uuid>
@@ -180,6 +182,10 @@ async function main() {
       usageTickets()
     }
 
+  } else if (group === 'context') {
+    // No subcommand: the project's intent is one thing, not a group.
+    result = await invoke(sock, 'getProjectContext', {})
+
   } else if (group === 'relations') {
     if (sub === 'list') {
       const [ticketUuid] = rest
@@ -321,6 +327,7 @@ function usageMain() {
 Usage: ovh <group> <command> [args]
 
 Groups:
+  context   Show the project's north star and vision (what an agent should steer by)
   tickets   Create and manage tickets
   relations Link tickets together
   views     Manage graph views and their nodes/edges

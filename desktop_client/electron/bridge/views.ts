@@ -45,10 +45,30 @@ export interface BridgeViewEdge {
   target_handle: string | null
 }
 
+/**
+ * An edge as an external caller sees it, with what it *means* attached.
+ *
+ * The app stores two unrelated things that both draw as lines: relations
+ * (`blocked-by`, `relates-to`) live in `ticket_relations` and are true of the
+ * tickets everywhere, while hand-drawn edges live in `graph_view_edges` and
+ * belong to one canvas. Which table a line came from is an implementation
+ * detail; what it means is not. So the read surface returns one list and
+ * labels each entry.
+ */
+export interface BridgeGraphEdge {
+  uuid: string
+  source_uuid: string
+  target_uuid: string
+  /** `blocked-by` points blocker→blocked. `visual` carries no meaning. */
+  type: 'blocked-by' | 'relates-to' | 'visual'
+  source_handle: string | null
+  target_handle: string | null
+}
+
 export interface BridgeViewMap {
   view: BridgeView
   nodes: EnrichedNode[]
-  edges: BridgeViewEdge[]
+  edges: BridgeGraphEdge[]
 }
 
 // ---------------------------------------------------------------------------
@@ -205,11 +225,71 @@ export function getViewMap(input: unknown): BridgeViewMap {
      ORDER BY t.created_at ASC`,
     [viewUuid],
   ) as EnrichedNode[]
-  const edges = runSql(
+  return { view: viewRows[0], nodes, edges: edgesForView(viewUuid, nodes) }
+}
+
+/**
+ * Every edge on a view, from both tables, each labelled with its type.
+ *
+ * Relations are deliberately NOT materialised into `graph_view_edges` — they
+ * are true of the tickets, not of a canvas, so duplicating them per view would
+ * mean cleaning up N copies on delete and guessing which views a new relation
+ * should join. They are unified here, at the read surface, instead.
+ *
+ * Before this existed `getViewMap` returned only the hand-drawn edges, so an
+ * agent reading a graph saw meaningless lines and none of the dependencies —
+ * the one thing a graph is for.
+ */
+function edgesForView(viewUuid: string, nodes: EnrichedNode[]): BridgeGraphEdge[] {
+  const onCanvas = new Set(nodes.map((n) => n.ticket_uuid))
+
+  const visual = (runSql(
     'SELECT uuid, source_uuid, target_uuid, source_handle, target_handle FROM graph_view_edges WHERE view_uuid = ?',
     [viewUuid],
-  ) as BridgeViewEdge[]
-  return { view: viewRows[0], nodes, edges }
+  ) as BridgeViewEdge[])
+    .filter((e) => onCanvas.has(e.source_uuid) && onCanvas.has(e.target_uuid))
+
+  // A relation shows on this view only when both its tickets are placed here.
+  const relations = runSql(
+    `SELECT uuid, node_a, node_b, type FROM ticket_relations
+     WHERE node_a IN (SELECT ticket_uuid FROM graph_view_nodes WHERE view_uuid = ?)
+       AND node_b IN (SELECT ticket_uuid FROM graph_view_nodes WHERE view_uuid = ?)`,
+    [viewUuid, viewUuid],
+  ) as { uuid: string; node_a: string; node_b: string; type: 'relates-to' | 'blocked-by' }[]
+
+  // A hand-drawn edge for the same pair acts as a handle anchor: the renderer
+  // adopts its ports rather than inferring them from position. Intentional,
+  // and mirrored here so external callers see the same geometry as the canvas.
+  const anchors = new Map(visual.map((e) => [pairKey(e.source_uuid, e.target_uuid), e]))
+
+  const typed: BridgeGraphEdge[] = relations.map((r) => {
+    // blocked-by draws blocker→blocked, so the arrow reads "comes before".
+    const source = r.type === 'blocked-by' ? r.node_b : r.node_a
+    const target = r.type === 'blocked-by' ? r.node_a : r.node_b
+    const anchor = anchors.get(pairKey(source, target))
+    return {
+      uuid: r.uuid,
+      source_uuid: source,
+      target_uuid: target,
+      type: r.type,
+      source_handle: anchor?.source_handle ?? null,
+      target_handle: anchor?.target_handle ?? null,
+    }
+  })
+
+  // A pair that has a relation is drawn by that relation; its anchor is not a
+  // second edge in its own right.
+  const claimed = new Set(typed.map((e) => pairKey(e.source_uuid, e.target_uuid)))
+  const plain: BridgeGraphEdge[] = visual
+    .filter((e) => !claimed.has(pairKey(e.source_uuid, e.target_uuid)))
+    .map((e) => ({ ...e, type: 'visual' as const }))
+
+  return [...typed, ...plain]
+}
+
+/** Order-independent key for a pair of ticket uuids. */
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`
 }
 
 export function moveViewNode(input: unknown): EnrichedNode {

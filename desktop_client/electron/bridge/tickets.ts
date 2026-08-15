@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { runSql } from '../db/sqlite'
 import { runTicketSql } from '../ipc/ticketAPI'
 import { notifyTicketUpdated } from '../ipc/notify'
+import { getActiveProject } from '../project/projectManager'
 
 const ticketTypeSchema = z.enum(['Explore', 'Feature', 'Execute'])
 type TicketType = z.infer<typeof ticketTypeSchema>
@@ -31,6 +32,7 @@ export interface BridgeTicket {
   type: TicketType
   status: string
   backlog: boolean
+  pinned: boolean
   description: string
   archived: boolean
   created_at: number
@@ -44,6 +46,7 @@ interface TicketRow {
   type: TicketType
   status: string
   backlog: 0 | 1
+  pinned: 0 | 1
   description: string
   archived: 0 | 1
   created_at: number
@@ -51,23 +54,31 @@ interface TicketRow {
 }
 
 const UPSERT_SQL = `
-  INSERT INTO tickets (uuid, id, title, type, status, backlog, description, archived, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO tickets (uuid, id, title, type, status, backlog, pinned, description, archived, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(uuid) DO UPDATE SET
     id          = excluded.id,
     title       = excluded.title,
     type        = excluded.type,
     status      = excluded.status,
     backlog     = excluded.backlog,
+    pinned      = excluded.pinned,
     description = excluded.description,
     archived    = excluded.archived,
     updated_at  = excluded.updated_at
 `
 
 const COUNTER_KEY = 'counter'
-const ID_PREFIX = 'OVH'
+const FALLBACK_PREFIX = 'OVH'
 
-/** Mints the next human-readable id (OVH-001), mirroring the renderer Counter. */
+/**
+ * Mints the next human-readable id, mirroring the renderer's Counter.
+ *
+ * The prefix comes from the open project rather than a constant: prefixes are
+ * per-project now, so a hardcoded `OVH` would stamp every project's tickets
+ * with another project's identity — and make `@OVH-1` mentions ambiguous, the
+ * exact thing the unique-prefix constraint exists to prevent.
+ */
 function nextId(): string {
   const rows = runSql('SELECT value FROM settings WHERE key = ?', [COUNTER_KEY]) as
     | { value: string }[]
@@ -77,11 +88,12 @@ function nextId(): string {
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     [COUNTER_KEY, String(next)],
   )
-  return `${ID_PREFIX}-${String(next).padStart(3, '0')}`
+  const prefix = getActiveProject()?.prefix ?? FALLBACK_PREFIX
+  return `${prefix}-${String(next).padStart(3, '0')}`
 }
 
 function rowToTicket(row: TicketRow): BridgeTicket {
-  return { ...row, backlog: row.backlog === 1, archived: row.archived === 1 }
+  return { ...row, backlog: row.backlog === 1, pinned: row.pinned === 1, archived: row.archived === 1 }
 }
 
 function readRow(uuid: string): TicketRow | null {
@@ -96,7 +108,7 @@ function readRow(uuid: string): TicketRow | null {
 function writeTicket(t: BridgeTicket): void {
   runTicketSql(UPSERT_SQL, [
     t.uuid, t.id, t.title, t.type, t.status,
-    t.backlog ? 1 : 0, t.description, t.archived ? 1 : 0,
+    t.backlog ? 1 : 0, t.pinned ? 1 : 0, t.description, t.archived ? 1 : 0,
     t.created_at, t.updated_at,
   ])
   notifyTicketUpdated(t.uuid)
@@ -110,6 +122,7 @@ const createSchema = z.object({
   status: z.string().min(1).optional(),
   description: z.string().default(''),
   backlog: z.boolean().default(false),
+  pinned: z.boolean().default(false),
 })
 
 const updateSchema = z.object({
@@ -119,6 +132,7 @@ const updateSchema = z.object({
     status: z.string().min(1).optional(),
     description: z.string().optional(),
     backlog: z.boolean().optional(),
+    pinned: z.boolean().optional(),
     archived: z.boolean().optional(),
   }),
 })
@@ -137,6 +151,7 @@ export function createTicket(input: unknown): BridgeTicket {
     type: data.type,
     status: data.status ?? INITIAL_STATUS[data.type],
     backlog: data.backlog,
+    pinned: data.pinned,
     description: data.description,
     archived: false,
     created_at: now,

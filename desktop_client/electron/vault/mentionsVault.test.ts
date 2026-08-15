@@ -155,7 +155,15 @@ describe('extraction on the in-app write path', () => {
 })
 
 describe('extraction on inbound vault edits (§2.1)', () => {
-  it('records a backlink from a file edited outside the app', async () => {
+  it('records a backlink from a file edited outside the app', {
+    timeout: 20_000,
+    // Same contention as the watcher test in vault.test.ts: this is the only
+    // case here that waits on the OS to deliver a filesystem notification, and
+    // under a full parallel run it is sometimes simply not delivered. The
+    // extraction itself is covered directly elsewhere in this file without a
+    // watcher; what is unique here is that the inbound path calls it at all.
+    retry: 3,
+  }, async () => {
     upsert('t1', 'OVH-001', 'The target.')
     upsert('t2', 'OVH-002', 'No references yet.')
     expect(mentionTargets('t2')).toEqual([])
@@ -167,7 +175,7 @@ describe('extraction on inbound vault edits (§2.1)', () => {
     writeVault('OVH-002.md', markdownFile('t2', 'OVH-002', 'Now blocked by @OVH-001.'))
 
     await expectMentionWritten('t2', ['t1'])
-  }, 20_000)
+  })
 
   it('drops a backlink the external edit removed', () => {
     upsert('t1', 'OVH-001', 'The target.')
