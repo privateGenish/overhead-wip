@@ -9,3 +9,16 @@ import { cleanup } from '@testing-library/react'
 afterEach(() => {
   cleanup()
 })
+
+// jsdom implements neither of these, and cmdk (the ⌘K palette, the faceted
+// filters) calls both on mount. Stubs rather than real implementations: no
+// test asserts on layout, they only have to exist so the component mounts.
+if (typeof window !== 'undefined') {
+  const host = window as unknown as { ResizeObserver?: typeof ResizeObserver }
+  host.ResizeObserver ??= class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  Element.prototype.scrollIntoView ??= function scrollIntoView(): void {}
+}

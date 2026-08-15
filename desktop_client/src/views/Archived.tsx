@@ -13,36 +13,8 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { useArchivedTickets } from '@/lib/ticketStore'
+import { matchesTicketQuery } from '@/lib/ticketSearch'
 import type { Ticket } from '@/shared/types'
-
-/**
- * Fuzzy match: every character of the query appears in order, not necessarily
- * adjacently. Loose enough that `ovh12` finds `OVH-123` and `arcsrch` finds
- * "archive search", which is the point — the ⌘K palette deliberately skips
- * archived tickets, so this field is the only way to find one.
- */
-function fuzzyMatch(haystack: string, needle: string): boolean {
-  let at = 0
-  for (const char of needle) {
-    at = haystack.indexOf(char, at)
-    if (at === -1) return false
-    at++
-  }
-  return true
-}
-
-/** Archived tickets are searched by the two things a person remembers. */
-function matchesArchivedQuery(
-  ticket: Pick<Ticket, 'id' | 'title'>,
-  query: string,
-): boolean {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return true
-  return (
-    fuzzyMatch(ticket.id.toLowerCase(), needle) ||
-    fuzzyMatch(ticket.title.toLowerCase(), needle)
-  )
-}
 
 function ArchivedTicketRow({ ticket }: { ticket: Ticket }) {
   const [confirming, setConfirming] = useState(false)
@@ -108,8 +80,11 @@ export function Archived() {
   const archived = useArchivedTickets()
   const [query, setQuery] = useState('')
 
+  // The same matcher the ⌘K palette uses. That palette deliberately skips
+  // archived tickets, so this field is the only way to find one — but there is
+  // no reason for the two to disagree about what "matches" means.
   const results = useMemo(
-    () => archived.filter((ticket) => matchesArchivedQuery(ticket, query)),
+    () => archived.filter((ticket) => matchesTicketQuery(ticket, query)),
     [archived, query],
   )
 
