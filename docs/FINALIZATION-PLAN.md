@@ -1476,14 +1476,27 @@ Unit 4 rewrites the schema and discards existing data. This is **covered by the 
   `.dark` class, so the app had only ever rendered light. The plan recorded
   this backwards.
 
-### Still open
+### Still open — TODO
 
-- **Typography**: the stated direction (Newsreader + Hanken Grotesk) and the
-  code (Geist) disagree. Flagged in `index.css`, deliberately not resolved —
-  it is a design decision.
-- **Deferred by design**: focus dashboard (**B1**), Kanban (**B3–B6**),
-  backlink read UI (**C10**), body search (**A4**), configurable vault path
-  (**E4**), bulk archive actions (**B7**).
-- **Not verified interactively**: anything visual. The editor's cursor and
-  undo behaviour, the palette and menus on screen, both themes' appearance.
-  Covered by tests where testable; a human still needs to look.
+- [ ] **Typography decision.** The stated direction (Newsreader + Hanken
+  Grotesk) and the code (Geist) disagree. Marked `TODO(design decision)` in
+  `desktop_client/src/index.css` — resolve by either installing Newsreader +
+  Hanken Grotesk and swapping the imports/tokens, or updating the stated
+  direction to name Geist. This is a design call, not an engineering one.
+- [ ] **Interactive/visual verification pass.** Nothing below has been looked
+  at by a human — tests cover the logic, not the feel:
+  - [ ] Editor cursor position and undo history survive Edit↔View toggling and
+    external updates (the `setContent`/`setEditable` rework in Unit 3)
+  - [ ] `@` mention menu — positioning, keyboard nav, visual styling
+  - [ ] ⌘K search palette — opening, filtering, closing, visual styling
+  - [ ] Both themes (Light / Dark / System) across every view — Light in
+    particular has never been on screen before this round
+  - [ ] Projects launcher — create/rename/delete flows, error states
+  - [ ] Notes grid — card layout, spacing, the note editor
+  - [ ] Graph canvas — double-click-to-open on nodes, typed edge rendering
+  - [ ] Settings — Account avatar generation, theme toggle, About placeholder
+  - [ ] Deep links — cold start and warm start, on macOS at minimum
+- [ ] **Deferred by design, not bugs** — revisit only if priorities change:
+  focus dashboard (**B1**), Kanban (**B3–B6**), backlink read UI (**C10**),
+  body search (**A4**), configurable vault path (**E4**), bulk archive
+  actions (**B7**).

@@ -4,13 +4,16 @@
 @import "@fontsource-variable/geist";
 
 /* Typography — Geist Variable, which is what ships today.
-   UNRESOLVED: the stated "Ink & Obsidian" direction names Newsreader + Hanken
-   Grotesk, and neither is installed or referenced anywhere — Geist is what
-   every surface has actually rendered in since the first commit. Adopting the
-   intended pair means two new font dependencies, which this round does not
-   take, so the discrepancy is left standing and flagged rather than silently
-   resolved either way. Which of the two is wrong — the direction or the code —
-   is a design decision, not one to settle in a stylesheet comment. */
+   TODO(design decision): the stated "Ink & Obsidian" direction names
+   Newsreader + Hanken Grotesk, and neither is installed or referenced
+   anywhere — Geist is what every surface has actually rendered in since the
+   first commit. Adopting the intended pair means two new font dependencies,
+   which this round does not take, so the discrepancy is left standing and
+   flagged rather than silently resolved either way. Which of the two is
+   wrong — the direction or the code — is a design decision, not one to
+   settle in a stylesheet comment. Resolve by either (a) installing Newsreader
+   + Hanken Grotesk and swapping the imports/tokens below, or (b) updating the
+   stated design direction to name Geist and closing this TODO. */
 
 /* Dark mode is a class on <html>, set by `lib/theme.ts` from the stored choice
    or the OS. Until this round nothing ever set it, so the app had only ever
