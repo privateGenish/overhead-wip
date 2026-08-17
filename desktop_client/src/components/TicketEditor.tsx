@@ -27,9 +27,16 @@ interface TicketEditorProps {
 }
 
 /**
- * The ticket detail's main panel: a Novel (TipTap) markdown editor with an
- * Edit / View toggle. Edits are saved to the store on every change; the
- * ticket's `description` holds markdown.
+ * The ticket detail's main panel: a Novel (TipTap) markdown editor, always
+ * editable. Edits are saved to the store on every change; the ticket's
+ * `description` holds markdown.
+ *
+ * There used to be a View/Edit toggle. Clicking Edit flipped `editable` but
+ * never moved DOM focus off the button just clicked, so keystrokes right
+ * after entering edit mode were silently swallowed — worst on a blank
+ * description, which had no placeholder text to click into as a fallback.
+ * Always-editable sidesteps the whole class of bug: there's no mode switch
+ * for focus to fall out of sync with.
  */
 const SIDE_MIN = 160
 const SIDE_MAX = 480
@@ -41,7 +48,6 @@ function editorMarkdown(editor: EditorInstance): string {
 }
 
 export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
-  const [editing, setEditing] = useState(false) // default: View (read-only)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [editor, setEditor] = useState<EditorInstance | null>(null)
   const [sideWidth, setSideWidth] = useState(SIDE_DEFAULT)
@@ -77,16 +83,6 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
     editor.commands.setContent(ticket.description, false)
   }, [editor, ticket.description])
 
-  // Mode toggling is a property of the same instance, not a reason to rebuild it.
-  useEffect(() => {
-    editor?.setEditable(editing)
-    // Toggling editable does not move focus — without this, keystrokes right
-    // after clicking Edit land on the button that was just clicked, not the
-    // editor, and appear to do nothing (most visible on a blank description,
-    // which has no placeholder text to click into as a fallback).
-    if (editing) editor?.commands.focus('end')
-  }, [editor, editing])
-
   /** Lands the queued description write, then snapshots. Order matters —
    *  reversed, history would record the previous text. */
   const commit = useCallback(async () => {
@@ -95,10 +91,12 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
   }, [ticket.uuid])
 
   // Flush on unmount and when switching to another ticket, so a pending edit
-  // can't be stranded by navigating away.
+  // can't be stranded by navigating away. Snapshotting here (not just
+  // flushing the write) is what used to happen on the Edit->View toggle —
+  // there's no toggle anymore, so leaving the ticket is the new commit point.
   useEffect(() => {
-    return () => { void persistQueue.flush(ticket.uuid) }
-  }, [ticket.uuid])
+    return () => { void commit() }
+  }, [commit])
 
   // Leaving the window is a natural commit point too.
   useEffect(() => {
@@ -119,37 +117,21 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
       <header className="flex items-center justify-between gap-4 border-b px-6 py-3">
         <div className="min-w-0 flex-1">
           <div className="font-mono text-xs text-muted-foreground">{ticket.id}</div>
-          {editing ? (
-            <input
-              defaultValue={ticket.title}
-              onChange={(e) => ticket.setTitle(e.target.value)}
-              placeholder="Ticket title"
-              className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/60"
-            />
-          ) : (
-            <h1 className="truncate text-lg font-semibold">{ticket.title}</h1>
-          )}
+          <input
+            defaultValue={ticket.title}
+            onChange={(e) => ticket.setTitle(e.target.value)}
+            placeholder="Ticket title"
+            className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/60"
+          />
         </div>
         <div className="flex items-center gap-2">
-          {editing && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setHistoryOpen(true)}
-            >
-              <History className="size-3.5" />
-              History
-            </Button>
-          )}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              if (editing) void commit()
-              setEditing((e) => !e)
-            }}
+            onClick={() => { void commit(); setHistoryOpen(true) }}
           >
-            {editing ? 'View' : 'Edit'}
+            <History className="size-3.5" />
+            History
           </Button>
         </div>
       </header>
@@ -160,15 +142,14 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <EditorRoot>
             <EditorContent
-              // Keyed on identity only. Content and editable state are driven
-              // imperatively by the effects above, so typing no longer rebuilds
-              // the editor on every keystroke.
+              // Keyed on identity only. Content is driven imperatively by the
+              // effect above, so typing no longer rebuilds the editor on
+              // every keystroke.
               key={ticket.uuid}
               extensions={extensions}
-              editable={editing}
+              editable
               onCreate={({ editor }) => {
                 editor.commands.setContent(ticket.description, false)
-                editor.setEditable(editing)
                 setEditor(editor)
               }}
               onUpdate={({ editor }) => {
