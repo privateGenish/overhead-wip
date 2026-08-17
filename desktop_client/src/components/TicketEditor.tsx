@@ -80,6 +80,11 @@ export function TicketEditor({ ticket, onArchived }: TicketEditorProps) {
   // Mode toggling is a property of the same instance, not a reason to rebuild it.
   useEffect(() => {
     editor?.setEditable(editing)
+    // Toggling editable does not move focus — without this, keystrokes right
+    // after clicking Edit land on the button that was just clicked, not the
+    // editor, and appear to do nothing (most visible on a blank description,
+    // which has no placeholder text to click into as a fallback).
+    if (editing) editor?.commands.focus('end')
   }, [editor, editing])
 
   /** Lands the queued description write, then snapshots. Order matters —
