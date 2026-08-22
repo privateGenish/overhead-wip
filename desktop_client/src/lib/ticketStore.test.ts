@@ -9,6 +9,11 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+// `bench_slots` is the one non-ticket table the store's own methods touch
+// (via benchClient) — a real in-memory table, not just a stub, so pin/unpin/
+// swap tests can assert on what the store thinks the bench actually is.
+const benchSlots = vi.hoisted(() => [] as { uuid: string; slot: number }[])
+
 // `ticketStore` constructs a singleton at import time that reaches straight for
 // window.db, so the stub has to exist before the module is evaluated.
 const sqlLog = vi.hoisted(() => {
@@ -18,9 +23,24 @@ const sqlLog = vi.hoisted(() => {
       log.push({ sql, params })
       return sql.trimStart().toUpperCase().startsWith('SELECT') ? [] : undefined
     },
-    query: async (sql: string) => (
-      sql.trimStart().toUpperCase().startsWith('SELECT') ? [] : undefined
-    ),
+    query: async (sql: string, params: unknown[] = []) => {
+      const s = sql.trim()
+      if (/^SELECT .* FROM bench_slots/i.test(s)) {
+        return [...benchSlots].sort((a, b) => a.slot - b.slot)
+      }
+      if (/^INSERT INTO bench_slots/i.test(s)) {
+        const [uuid, slot] = params as [string, number]
+        benchSlots.push({ uuid, slot })
+        return undefined
+      }
+      if (/^DELETE FROM bench_slots/i.test(s)) {
+        const [uuid] = params as [string]
+        const i = benchSlots.findIndex((r) => r.uuid === uuid)
+        if (i >= 0) benchSlots.splice(i, 1)
+        return undefined
+      }
+      return s.toUpperCase().startsWith('SELECT') ? [] : undefined
+    },
     history: async () => [],
     historyFlush: async () => {},
     relation: async () => [],
@@ -33,12 +53,12 @@ const sqlLog = vi.hoisted(() => {
   return log
 })
 
-import { TicketStore } from './ticketStore'
+import { TicketStore, MAX_BENCH_TICKETS } from './ticketStore'
 import { persistQueue, PERSIST_DEBOUNCE_MS } from './persistQueue'
 import type { Ticket } from '@/shared/types'
 
 const stub = {
-  reset: () => { sqlLog.length = 0 },
+  reset: () => { sqlLog.length = 0; benchSlots.length = 0 },
   upserts: () => sqlLog.filter((c) => c.sql.includes('INSERT INTO tickets')).length,
   deletes: () => sqlLog.filter((c) => c.sql.startsWith('DELETE FROM tickets')).length,
   /** The row bound to the most recent upsert, keyed by column name. */
@@ -179,5 +199,72 @@ describe('TicketStore persistence wiring', () => {
 
     expect(stub.deletes()).toBe(1)
     expect(stub.upserts()).toBe(upsertsAfterDelete) // no write after the DELETE
+  })
+})
+
+describe('TicketStore — the bench', () => {
+  beforeEach(() => {
+    stub.reset()
+    persistQueue.__resetForTests()
+  })
+
+  afterEach(() => {
+    persistQueue.__resetForTests()
+  })
+
+  it('pinning adds to the bench in order; unpinning removes it', async () => {
+    const store = new TicketStore()
+    await settle()
+    const a = await store.create({ type: 'Execute', title: 'a' })
+    const b = await store.create({ type: 'Execute', title: 'b' })
+    await settle()
+
+    expect((await store.pinTicket(a)).ok).toBe(true)
+    expect((await store.pinTicket(b)).ok).toBe(true)
+    expect(store.getBenchSnapshot().map((t) => t.title)).toEqual(['a', 'b'])
+    expect(a.pinned).toBe(true)
+
+    await store.unpinTicket(a)
+    expect(store.getBenchSnapshot().map((t) => t.title)).toEqual(['b'])
+    expect(a.pinned).toBe(false)
+  })
+
+  it(`refuses a ${MAX_BENCH_TICKETS + 1}th pin and hands back the current bench`, async () => {
+    const store = new TicketStore()
+    await settle()
+    const bench: Ticket[] = []
+    for (let i = 0; i < MAX_BENCH_TICKETS; i++) {
+      const t = await store.create({ type: 'Execute', title: `bench-${i}` })
+      await store.pinTicket(t)
+      bench.push(t)
+    }
+    const overflow = await store.create({ type: 'Execute', title: 'overflow' })
+    await settle()
+
+    const result = await store.pinTicket(overflow)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.bench.map((t) => t.title)).toEqual(bench.map((t) => t.title))
+    expect(overflow.pinned).toBe(false) // the attempt made no change
+  })
+
+  it('swapTicket replaces one bench ticket with another in the same slot', async () => {
+    const store = new TicketStore()
+    await settle()
+    const bench: Ticket[] = []
+    for (let i = 0; i < MAX_BENCH_TICKETS; i++) {
+      const t = await store.create({ type: 'Execute', title: `bench-${i}` })
+      await store.pinTicket(t)
+      bench.push(t)
+    }
+    const incoming = await store.create({ type: 'Execute', title: 'incoming' })
+    await settle()
+
+    await store.swapTicket(bench[0], incoming)
+
+    expect(bench[0].pinned).toBe(false)
+    expect(incoming.pinned).toBe(true)
+    // Swap keeps the vacated slot rather than appending — incoming takes
+    // bench[0]'s old (first) position instead of landing last.
+    expect(store.getBenchSnapshot().map((t) => t.title)).toEqual(['incoming', 'bench-1', 'bench-2', 'bench-3'])
   })
 })

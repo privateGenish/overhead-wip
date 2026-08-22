@@ -27,7 +27,11 @@ const tickets = vi.hoisted(() => [] as Ticket[])
 
 vi.mock('@/lib/ticketStore', () => ({
   useTickets: () => tickets,
-  getTicketStore: () => ({ create: vi.fn() }),
+  getTicketStore: () => ({
+    create: vi.fn(),
+    getByUuid: (uuid: string) => tickets.find((t) => t.uuid === uuid),
+  }),
+  MAX_BENCH_TICKETS: 4,
 }))
 
 import { TicketView } from './TicketView'

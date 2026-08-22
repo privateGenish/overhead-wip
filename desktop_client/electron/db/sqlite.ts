@@ -86,6 +86,20 @@ export function initSqlite(file: string): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_mentions_target ON mentions(target_uuid);
+
+    -- The bench: which tickets are pinned, and in what order. Source of truth
+    -- for both the 4-slot cap and the display order — tickets.pinned is kept
+    -- in sync alongside this for the surfaces that only need the boolean.
+    CREATE TABLE IF NOT EXISTS bench_slots (
+      ticket_uuid TEXT PRIMARY KEY REFERENCES tickets(uuid) ON DELETE CASCADE,
+      slot        INTEGER NOT NULL UNIQUE CHECK(slot >= 0 AND slot < 4)
+    );
+
+    -- Same idea for notes, a 2-slot bench.
+    CREATE TABLE IF NOT EXISTS pinned_notes (
+      note_uuid TEXT PRIMARY KEY REFERENCES notes(uuid) ON DELETE CASCADE,
+      slot      INTEGER NOT NULL UNIQUE CHECK(slot >= 0 AND slot < 2)
+    );
   `)
 }
 

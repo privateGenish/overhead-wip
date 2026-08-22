@@ -5,4 +5,5 @@ export type TicketRow = {
   type: 'Explore' | 'Feature' | 'Execute'
   status: string
   backlog: boolean
+  pinned: boolean
 }

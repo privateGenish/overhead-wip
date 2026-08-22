@@ -12,6 +12,15 @@ import { ticketClient } from './ticketClient'
 import { generalClient } from './generalClient'
 import { Counter } from './counter'
 import { persistQueue } from './persistQueue'
+import { benchClient, MAX_BENCH_TICKETS } from './benchClient'
+
+export { MAX_BENCH_TICKETS }
+
+/** What pinning returns when the bench is already full. */
+export interface BenchFull {
+  ok: false
+  bench: Ticket[]
+}
 
 const factories = {
   Execute: ExecuteTicket,
@@ -28,6 +37,9 @@ export class TicketStore {
   #tickets: Ticket[] = []
   #active: Ticket[] = []    // stable non-archived ref for useSyncExternalStore
   #archived: Ticket[] = []  // stable archived ref for useSyncExternalStore
+  #bench: Ticket[] = []     // stable pinned-in-slot-order ref for useSyncExternalStore
+  /** ticket uuid → bench slot. Source of truth lives in `bench_slots`; this is a cache. */
+  #benchOrder = new Map<string, number>()
   #listeners = new Set<() => void>()
   #unsubscribes = new Map<Ticket, () => void>()
   /** Teardown for the window/IPC listeners wired in the constructor. */
@@ -47,8 +59,11 @@ export class TicketStore {
       await ticketClient.delete(ticket.uuid)
     })
     Ticket.setGenerateIdHook(() => Counter.next())
+    // An externally-driven pin/unpin (the bridge, an agent) changes
+    // `bench_slots` without going through this store — refresh the cached
+    // order alongside the ticket sync so the bench doesn't go stale.
     const unsubscribeVault = window.db.onVaultTicketUpdated?.((uuid) => {
-      void this.syncFromStorage(uuid)
+      void this.#refreshBenchOrder().then(() => this.syncFromStorage(uuid))
     })
     if (unsubscribeVault) this.#teardown.push(unsubscribeVault)
 
@@ -79,13 +94,21 @@ export class TicketStore {
     this.#tickets = []
     this.#active = []
     this.#archived = []
+    this.#bench = []
+    this.#benchOrder = new Map()
   }
 
   async #hydrate(): Promise<void> {
     const tickets = await loadTickets()
     for (const ticket of tickets) this.#track(ticket)
     this.#tickets = tickets
+    await this.#refreshBenchOrder()
     this.#notify()
+  }
+
+  async #refreshBenchOrder(): Promise<void> {
+    const slots = await benchClient.listTicketSlots()
+    this.#benchOrder = new Map(slots.map((s) => [s.uuid, s.slot]))
   }
 
   /** Subscribes the store to a ticket so list rows stay fresh. */
@@ -118,9 +141,14 @@ export class TicketStore {
 
   getArchivedSnapshot = (): Ticket[] => this.#archived
 
+  getBenchSnapshot = (): Ticket[] => this.#bench
+
   #notify(): void {
     this.#active = this.#tickets.filter((t) => !t.archived)
     this.#archived = this.#tickets.filter((t) => t.archived)
+    this.#bench = this.#tickets
+      .filter((t) => this.#benchOrder.has(t.uuid))
+      .sort((a, b) => (this.#benchOrder.get(a.uuid) ?? 0) - (this.#benchOrder.get(b.uuid) ?? 0))
     for (const listener of this.#listeners) listener()
   }
 
@@ -206,6 +234,48 @@ export class TicketStore {
     this.#tickets = []
     this.#active = []
     this.#archived = []
+    this.#bench = []
+    this.#benchOrder = new Map()
+    this.#notify()
+  }
+
+  /**
+   * Pins a ticket onto the bench. When the bench is already full, this makes
+   * no change and instead hands back who is currently on it — the caller
+   * (a swap dialog) decides what to do with that, rather than this method
+   * guessing.
+   */
+  async pinTicket(ticket: Ticket): Promise<{ ok: true } | BenchFull> {
+    if (this.#benchOrder.has(ticket.uuid)) return { ok: true }
+    const slots = await benchClient.listTicketSlots()
+    if (slots.length >= MAX_BENCH_TICKETS) {
+      const bench = slots
+        .map((s) => this.getByUuid(s.uuid))
+        .filter((t): t is Ticket => t !== undefined)
+      return { ok: false, bench }
+    }
+    await benchClient.pinTicket(ticket.uuid, slots)
+    ticket.setPinned(true)
+    await this.#refreshBenchOrder()
+    this.#notify()
+    return { ok: true }
+  }
+
+  async unpinTicket(ticket: Ticket): Promise<void> {
+    if (!this.#benchOrder.has(ticket.uuid)) return
+    await benchClient.unpinTicket(ticket.uuid)
+    ticket.setPinned(false)
+    await this.#refreshBenchOrder()
+    this.#notify()
+  }
+
+  /** Frees `outgoing`'s slot and gives it to `incoming`, in one step. */
+  async swapTicket(outgoing: Ticket, incoming: Ticket): Promise<void> {
+    const slots = await benchClient.listTicketSlots()
+    await benchClient.swapTicket(outgoing.uuid, incoming.uuid, slots)
+    outgoing.setPinned(false)
+    incoming.setPinned(true)
+    await this.#refreshBenchOrder()
     this.#notify()
   }
 }
@@ -264,6 +334,12 @@ export function useTickets(): Ticket[] {
 export function useArchivedTickets(): Ticket[] {
   const s = getTicketStore()
   return useSyncExternalStore(s.subscribe, s.getArchivedSnapshot)
+}
+
+/** Binds React to the bench — pinned tickets, in slot order. At most {@link MAX_BENCH_TICKETS}. */
+export function useBench(): Ticket[] {
+  const s = getTicketStore()
+  return useSyncExternalStore(s.subscribe, s.getBenchSnapshot)
 }
 
 /** Binds React to a single ticket — re-renders only when that ticket mutates. */

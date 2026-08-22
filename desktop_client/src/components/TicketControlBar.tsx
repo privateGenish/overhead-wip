@@ -1,4 +1,3 @@
-import { Pin } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -6,8 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { PinButton } from '@/components/PinButton'
 import { getTicketStore } from '@/lib/ticketStore'
 import {
   TICKET_STATUS_OPTIONS,
@@ -56,23 +54,8 @@ export function TicketControlBar({ ticket }: TicketControlBarProps) {
       </Select>
 
       {/* Pin lives here rather than in the side panel so it is reachable
-          without scrolling. Nothing consumes it yet — the focus surface that
-          will is deferred; the flag and its affordance ship first. */}
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-pressed={ticket.pinned}
-        aria-label={ticket.pinned ? 'Unpin ticket' : 'Pin ticket'}
-        title={ticket.pinned ? 'Unpin ticket' : 'Pin ticket'}
-        onClick={() => ticket.setPinned(!ticket.pinned)}
-        className={cn(
-          'gap-1.5',
-          ticket.pinned ? 'text-foreground' : 'text-muted-foreground',
-        )}
-      >
-        <Pin className={cn('size-3.5', ticket.pinned && 'fill-current')} />
-        {ticket.pinned ? 'Pinned' : 'Pin'}
-      </Button>
+          without scrolling — it's also on the table row and Home. */}
+      <PinButton ticket={ticket} />
     </div>
   )
 }

@@ -84,6 +84,80 @@ describe('bridge — tickets', () => {
     expect(() => create({ title: 'x', type: 'Nope' })).toThrow()
     expect(() => create('DROP TABLE tickets')).toThrow()
   })
+
+  it('createTicket and updateTicket ignore a caller-supplied `pinned` — only pinTicket sets it', () => {
+    const t = create({ title: 'sneaky', type: 'Execute', pinned: true } as unknown as object)
+    expect(t.pinned).toBe(false)
+
+    const updated = dispatchBridge('updateTicket', {
+      uuid: t.uuid,
+      patch: { pinned: true },
+    }) as BridgeTicket
+    expect(updated.pinned).toBe(false)
+  })
+})
+
+describe('bridge — the bench', () => {
+  beforeEach(() => {
+    __resetSqliteForTests()
+    initSqlite(':memory:')
+  })
+  afterEach(() => __resetSqliteForTests())
+
+  const pin = (uuid: string) => dispatchBridge('pinTicket', { uuid }) as BridgeTicket
+  const unpin = (uuid: string) => dispatchBridge('unpinTicket', { uuid }) as BridgeTicket
+
+  it('pins a ticket, and unpins it back', () => {
+    const t = create({ title: 'benched', type: 'Execute' })
+    expect(pin(t.uuid).pinned).toBe(true)
+    expect((dispatchBridge('getTicket', { uuid: t.uuid }) as BridgeTicket).pinned).toBe(true)
+
+    expect(unpin(t.uuid).pinned).toBe(false)
+    expect((dispatchBridge('getTicket', { uuid: t.uuid }) as BridgeTicket).pinned).toBe(false)
+  })
+
+  it('is idempotent — pinning twice or unpinning an unpinned ticket is a no-op, not an error', () => {
+    const t = create({ title: 'idempotent', type: 'Execute' })
+    pin(t.uuid)
+    expect(pin(t.uuid).pinned).toBe(true)
+
+    const other = create({ title: 'never pinned', type: 'Execute' })
+    expect(unpin(other.uuid).pinned).toBe(false)
+  })
+
+  it('refuses a 5th pin and names the current bench in the error', () => {
+    const bench = [0, 1, 2, 3].map((i) => create({ title: `bench-${i}`, type: 'Execute' }))
+    for (const t of bench) pin(t.uuid)
+
+    const fifth = create({ title: 'one too many', type: 'Execute' })
+    expect(() => pin(fifth.uuid)).toThrow(/bench is full \(4\/4\)/)
+    expect(() => pin(fifth.uuid)).toThrow(bench[0].title)
+    // The attempt made no change.
+    expect((dispatchBridge('getTicket', { uuid: fifth.uuid }) as BridgeTicket).pinned).toBe(false)
+  })
+
+  it('frees a slot on unpin, so a 5th pin succeeds afterward', () => {
+    const bench = [0, 1, 2, 3].map((i) => create({ title: `bench-${i}`, type: 'Execute' }))
+    for (const t of bench) pin(t.uuid)
+    unpin(bench[0].uuid)
+
+    const fifth = create({ title: 'now fits', type: 'Execute' })
+    expect(pin(fifth.uuid).pinned).toBe(true)
+  })
+
+  it('pinTicket throws for an unknown uuid', () => {
+    expect(() => pin('nope')).toThrow('not found')
+  })
+
+  it('getProjectContext reports the bench in pin order', () => {
+    const a = create({ title: 'a', type: 'Execute' })
+    const b = create({ title: 'b', type: 'Execute' })
+    pin(a.uuid)
+    pin(b.uuid)
+
+    const ctx = dispatchBridge('getProjectContext', undefined) as { bench: BridgeTicket[] }
+    expect(ctx.bench.map((t) => t.title)).toEqual(['a', 'b'])
+  })
 })
 
 describe('bridge — relations', () => {

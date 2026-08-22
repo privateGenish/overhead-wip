@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorRoot, EditorContent, StarterKit, Placeholder } from 'novel'
 import type { EditorInstance } from 'novel'
 import { Markdown } from 'tiptap-markdown'
-import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, Pin, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,8 +15,10 @@ import {
 } from '@/components/ui/dialog'
 import { persistQueue } from '@/lib/persistQueue'
 import { noteClient, noteKey, type NoteData } from '@/lib/noteClient'
+import { benchClient, MAX_PINNED_NOTES } from '@/lib/benchClient'
 import { readableError } from '@/lib/ipcError'
 import { MentionMenu } from '@/components/MentionMenu'
+import { cn } from '@/lib/utils'
 import '@/components/ticket-editor.css'
 
 /** Editor extensions — the same set the ticket editor uses. */
@@ -46,6 +48,10 @@ export function Notes() {
   const [notes, setNotes] = useState<NoteData[] | null>(null)
   const [openUuid, setOpenUuid] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pinnedUuids, setPinnedUuids] = useState<string[]>([])
+  // Set when pinning would exceed MAX_PINNED_NOTES — names the note trying
+  // to get on, so the swap dialog can offer it a slot.
+  const [pinConflict, setPinConflict] = useState<{ pendingUuid: string; current: NoteData[] } | null>(null)
 
   // The list is edited from callbacks that must see the *current* note to
   // persist it, not the one captured when they were created.
@@ -61,8 +67,35 @@ export function Notes() {
     void noteClient.all()
       .then((loaded) => { if (alive) publish(loaded) })
       .catch((err: unknown) => { if (alive) { setError(readableError(err)); publish([]) } })
+    void benchClient.listNoteSlots()
+      .then((slots) => { if (alive) setPinnedUuids(slots.map((s) => s.uuid)) })
     return () => { alive = false }
   }, [publish])
+
+  /** Pins, unpins, or — if the bench is full — opens the swap dialog. */
+  const togglePin = useCallback(async (uuid: string) => {
+    if (pinnedUuids.includes(uuid)) {
+      await benchClient.unpinNote(uuid)
+      setPinnedUuids((prev) => prev.filter((u) => u !== uuid))
+      return
+    }
+    const slots = await benchClient.listNoteSlots()
+    if (slots.length >= MAX_PINNED_NOTES) {
+      const current = notesRef.current.filter((n) => slots.some((s) => s.uuid === n.uuid))
+      setPinConflict({ pendingUuid: uuid, current })
+      return
+    }
+    await benchClient.pinNote(uuid, slots)
+    setPinnedUuids((prev) => [...prev, uuid])
+  }, [pinnedUuids])
+
+  const resolveSwap = useCallback(async (outUuid: string) => {
+    if (!pinConflict) return
+    const slots = await benchClient.listNoteSlots()
+    await benchClient.swapNote(outUuid, pinConflict.pendingUuid, slots)
+    setPinnedUuids((prev) => [...prev.filter((u) => u !== outUuid), pinConflict.pendingUuid])
+    setPinConflict(null)
+  }, [pinConflict])
 
   // Leaving the window is a commit point, and so is leaving the view — a
   // pending edit must never be stranded by navigating away.
@@ -114,6 +147,7 @@ export function Notes() {
     await persistQueue.cancel(noteKey(uuid))
     setOpenUuid(null)
     publish(notesRef.current.filter((note) => note.uuid !== uuid))
+    setPinnedUuids((prev) => prev.filter((u) => u !== uuid)) // pinned_notes row cascades on its own
     try {
       await noteClient.delete(uuid)
     } catch (err) {
@@ -170,11 +204,43 @@ export function Notes() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {notes.map((note) => (
-              <NoteCard key={note.uuid} note={note} onOpen={() => setOpenUuid(note.uuid)} />
+              <NoteCard
+                key={note.uuid}
+                note={note}
+                pinned={pinnedUuids.includes(note.uuid)}
+                onOpen={() => setOpenUuid(note.uuid)}
+                onTogglePin={() => void togglePin(note.uuid)}
+              />
             ))}
           </div>
         )}
       </div>
+
+      <Dialog open={pinConflict !== null} onOpenChange={(open) => { if (!open) setPinConflict(null) }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Only {MAX_PINNED_NOTES} notes can be pinned</DialogTitle>
+            <DialogDescription>
+              Swap one out to make room on the Home rail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1">
+            {pinConflict?.current.map((n) => (
+              <button
+                key={n.uuid}
+                onClick={() => void resolveSwap(n.uuid)}
+                className="flex items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+              >
+                <span className="truncate">{n.title}</span>
+                <span className="text-xs text-muted-foreground shrink-0">Swap</span>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -193,19 +259,46 @@ function preview(body: string): string {
   return flat.length > PREVIEW_LENGTH ? `${flat.slice(0, PREVIEW_LENGTH)}…` : flat
 }
 
-function NoteCard({ note, onOpen }: { note: NoteData; onOpen: () => void }) {
+interface NoteCardProps {
+  note: NoteData
+  pinned: boolean
+  onOpen: () => void
+  onTogglePin: () => void
+}
+
+/**
+ * The pin button sits above a full-cover "open" button rather than nesting a
+ * button in a button — the body text carries `pointer-events-none` so clicks
+ * pass through to Open everywhere except the pin corner.
+ */
+function NoteCard({ note, pinned, onOpen, onTogglePin }: NoteCardProps) {
   const body = preview(note.body)
   return (
-    <button
-      onClick={onOpen}
-      aria-label={`Open ${note.title}`}
-      className="h-40 rounded-lg border p-4 text-left flex flex-col gap-2 transition-colors cursor-pointer hover:bg-accent/40"
-    >
-      <span className="font-medium truncate">{note.title}</span>
-      <span className="text-sm text-muted-foreground line-clamp-4 whitespace-pre-wrap">
+    <div className="relative h-40 rounded-lg border p-4 flex flex-col gap-2 transition-colors hover:bg-accent/40">
+      <button
+        onClick={onOpen}
+        aria-label={`Open ${note.title}`}
+        className="absolute inset-0 cursor-pointer rounded-lg"
+      />
+      <div className="relative flex items-start justify-between gap-2 pointer-events-none">
+        <span className="font-medium truncate">{note.title}</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onTogglePin() }}
+          aria-pressed={pinned}
+          aria-label={pinned ? 'Unpin note' : 'Pin note'}
+          title={pinned ? 'Unpin note' : 'Pin note'}
+          className={cn(
+            'pointer-events-auto shrink-0 rounded p-0.5 transition-colors',
+            pinned ? 'text-copper' : 'text-muted-foreground/40 hover:text-muted-foreground',
+          )}
+        >
+          <Pin className={cn('size-3.5', pinned && 'fill-current')} />
+        </button>
+      </div>
+      <span className="relative text-sm text-muted-foreground line-clamp-4 whitespace-pre-wrap pointer-events-none">
         {body || 'Empty note'}
       </span>
-    </button>
+    </div>
   )
 }
 

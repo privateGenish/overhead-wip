@@ -24,6 +24,28 @@ vi.mock('@/lib/noteClient', async (importOriginal) => ({
   },
 }))
 
+/** In-memory `pinned_notes` — the same shape the swap logic reads and writes. */
+const pinnedNoteSlots = vi.hoisted(() => [] as { uuid: string; slot: number }[])
+
+vi.mock('@/lib/benchClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/benchClient')>()),
+  benchClient: {
+    listNoteSlots: async () => [...pinnedNoteSlots],
+    pinNote: async (uuid: string) => { pinnedNoteSlots.push({ uuid, slot: pinnedNoteSlots.length }) },
+    unpinNote: async (uuid: string) => {
+      const i = pinnedNoteSlots.findIndex((s) => s.uuid === uuid)
+      if (i >= 0) pinnedNoteSlots.splice(i, 1)
+    },
+    swapNote: async (outUuid: string, inUuid: string) => {
+      const i = pinnedNoteSlots.findIndex((s) => s.uuid === outUuid)
+      if (i < 0) return
+      const slot = pinnedNoteSlots[i].slot
+      pinnedNoteSlots.splice(i, 1)
+      pinnedNoteSlots.push({ uuid: inUuid, slot })
+    },
+  },
+}))
+
 // The markdown body editor is ProseMirror, and none of what these tests assert
 // runs through it. Stubbing it keeps the grid and the write cadence in view.
 vi.mock('novel', () => ({
@@ -44,6 +66,7 @@ beforeEach(() => {
   calls.upsert.length = 0
   calls.deleted.length = 0
   stored.length = 0
+  pinnedNoteSlots.length = 0
   persistQueue.__resetForTests()
 })
 
@@ -102,6 +125,43 @@ describe('Notes grid', () => {
 
     await waitFor(() => expect(calls.deleted).toEqual(['n1']))
     expect(await screen.findByText(/No notes yet/)).toBeInTheDocument()
+  })
+})
+
+describe('Notes pinning', () => {
+  it('pins a note, then unpins it', async () => {
+    stored.push(note('n1', 'Monetization', 'body'))
+    render(<Notes />)
+    await screen.findByText('Monetization')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pin note' }))
+    expect(await screen.findByRole('button', { name: 'Unpin note' })).toBeInTheDocument()
+    await waitFor(() => expect(pinnedNoteSlots).toEqual([{ uuid: 'n1', slot: 0 }]))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin note' }))
+    expect(await screen.findByRole('button', { name: 'Pin note' })).toBeInTheDocument()
+    await waitFor(() => expect(pinnedNoteSlots).toEqual([]))
+  })
+
+  it('offers a swap instead of a third pin', async () => {
+    stored.push(note('n1', 'First', 'a'), note('n2', 'Second', 'b'), note('n3', 'Third', 'c'))
+    pinnedNoteSlots.push({ uuid: 'n1', slot: 0 }, { uuid: 'n2', slot: 1 })
+    render(<Notes />)
+    await screen.findByText('Third')
+
+    // Only Third is unpinned, so its is the sole "Pin note" button left.
+    fireEvent.click(screen.getByRole('button', { name: 'Pin note' }))
+
+    expect(await screen.findByText('Only 2 notes can be pinned')).toBeInTheDocument()
+    const swapFirst = screen.getByRole('button', { name: /First/ })
+    expect(swapFirst).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Second/ })).toBeInTheDocument()
+    expect(pinnedNoteSlots.map((s) => s.uuid)).toEqual(['n1', 'n2']) // unchanged until a choice is made
+
+    fireEvent.click(swapFirst)
+
+    await waitFor(() => expect(pinnedNoteSlots.map((s) => s.uuid)).toEqual(['n2', 'n3']))
+    expect(screen.queryByText('Only 2 notes can be pinned')).not.toBeInTheDocument()
   })
 })
 

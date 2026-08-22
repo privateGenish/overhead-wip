@@ -15,6 +15,7 @@
 
 import { runSql } from '../db/sqlite'
 import { getActiveProject } from '../project/projectManager'
+import { listBench, type BridgeTicket } from './tickets'
 
 export interface BridgeProjectContext {
   project: { uuid: string; name: string; prefix: string } | null
@@ -22,6 +23,13 @@ export interface BridgeProjectContext {
   northStar: string
   /** The longer statement — core idea, constraints, what matters. */
   vision: string
+  /**
+   * What's pinned right now, in bench order. This is the closest thing the
+   * model has to "what is this project currently doing" — manually curated,
+   * capped at 4, so it stays worth reading instead of drifting into a second
+   * ticket list.
+   */
+  bench: BridgeTicket[]
 }
 
 function setting(key: string): string {
@@ -44,5 +52,6 @@ export function getProjectContext(): BridgeProjectContext {
       : null,
     northStar: setting('vision.northStar'),
     vision: setting('vision.body'),
+    bench: listBench(),
   }
 }

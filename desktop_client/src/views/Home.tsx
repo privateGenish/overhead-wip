@@ -1,15 +1,24 @@
-import { FocusCard } from '@/components/FocusCard'
-import { VisionCard } from '@/components/VisionCard'
+import { Bench } from '@/components/Bench'
+import { Rail } from '@/components/Rail'
 
-export function Home() {
+interface HomeProps {
+  onOpenTicket: (uuid: string) => void
+  onOpenNotes: () => void
+}
+
+/**
+ * Home — the re-entry surface. Not a dashboard: a bounded look at what's
+ * pinned (the bench, ≤4 tickets) and what frames it (North Star/Vision,
+ * opt-in, and up to 2 pinned notes). Nothing here is ordered or sized by how
+ * long anything has been sitting.
+ */
+export function Home({ onOpenTicket, onOpenNotes }: HomeProps) {
   return (
-    <div className="flex h-full gap-4 p-6">
-      <div className="flex-1 min-w-0">
-        <FocusCard />
+    <div className="flex h-full gap-4 overflow-y-auto p-6">
+      <div className="min-w-0 flex-1">
+        <Bench onOpenTicket={onOpenTicket} />
       </div>
-      <div className="w-72 shrink-0 flex flex-col">
-        <VisionCard />
-      </div>
+      <Rail onOpenNotes={onOpenNotes} />
     </div>
   )
 }

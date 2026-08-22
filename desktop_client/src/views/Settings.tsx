@@ -10,9 +10,12 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog'
+import { Switch } from '@/components/ui/switch'
 import { AccountAvatar } from '@/components/AccountAvatar'
 import { getTicketStore } from '@/lib/ticketStore'
 import { getGlobalSetting, setGlobalSetting } from '@/lib/appSettings'
+import { generalClient } from '@/lib/generalClient'
+import { HOME_SHOW_NORTH_STAR_KEY, HOME_SHOW_VISION_KEY } from '@/components/Rail'
 import { setTheme, useThemeChoice, THEME_CHOICES, type ThemeChoice } from '@/lib/theme'
 
 /**
@@ -84,6 +87,30 @@ function ThemeToggle() {
   )
 }
 
+/** One project-scoped on/off setting, rendered as a switch. */
+function HomeSectionToggle({
+  settingKey, label, hint, fallback,
+}: { settingKey: string; label: string; hint: string; fallback: boolean }) {
+  const [checked, setChecked] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    void generalClient.settingGet(settingKey).then((v) => setChecked(v === null ? fallback : v === 'true'))
+  }, [settingKey, fallback])
+
+  if (checked === null) return null
+
+  function toggle(next: boolean) {
+    setChecked(next)
+    void generalClient.settingSet(settingKey, String(next))
+  }
+
+  return (
+    <SettingRow label={label} hint={hint}>
+      <Switch aria-label={label} checked={checked} onCheckedChange={toggle} />
+    </SettingRow>
+  )
+}
+
 function General() {
   return (
     <div className="flex flex-col gap-6">
@@ -94,6 +121,18 @@ function General() {
       >
         <ThemeToggle />
       </SettingRow>
+      <HomeSectionToggle
+        settingKey={HOME_SHOW_NORTH_STAR_KEY}
+        label="North Star on Home"
+        hint="Shows the one-sentence North Star on the Home rail."
+        fallback
+      />
+      <HomeSectionToggle
+        settingKey={HOME_SHOW_VISION_KEY}
+        label="Vision on Home"
+        hint="Shows the full Vision document on the Home rail."
+        fallback={false}
+      />
     </div>
   )
 }

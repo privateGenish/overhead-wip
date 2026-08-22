@@ -14,6 +14,16 @@ vi.mock('@/lib/ticketStore', () => ({
   getTicketStore: () => ({ deleteAll: vi.fn() }),
 }))
 
+// General renders the Home toggles on mount, which read project settings —
+// a different store from window.appSettings (that one is account/theme).
+const projectSettings = new Map<string, string>()
+vi.mock('@/lib/generalClient', () => ({
+  generalClient: {
+    settingGet: vi.fn(async (key: string) => projectSettings.get(key) ?? null),
+    settingSet: vi.fn(async (key: string, value: string) => { projectSettings.set(key, value) }),
+  },
+}))
+
 import { Settings } from './Settings'
 
 const store = new Map<string, string>()
@@ -31,6 +41,7 @@ describe('Settings', () => {
   beforeEach(async () => {
     __resetThemeForTests()
     store.clear()
+    projectSettings.clear()
     appSettings.set.mockClear()
     document.documentElement.classList.remove('dark')
     ;(window as unknown as { appSettings: unknown }).appSettings = appSettings
@@ -54,6 +65,18 @@ describe('Settings', () => {
     }
     // Nothing stored, so the default is the one marked.
     expect(screen.getByRole('button', { name: 'System' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('defaults North Star on and Vision off for Home, and persists a change', async () => {
+    render(<Settings />)
+
+    const northStar = await screen.findByRole('switch', { name: 'North Star on Home' })
+    const vision = screen.getByRole('switch', { name: 'Vision on Home' })
+    expect(northStar).toHaveAttribute('aria-checked', 'true')
+    expect(vision).toHaveAttribute('aria-checked', 'false')
+
+    await userEvent.click(vision)
+    expect(projectSettings.get('home.showVision')).toBe('true')
   })
 
   it('persists the theme choice and applies it at once', async () => {

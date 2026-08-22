@@ -15,5 +15,6 @@ export function toRows(tickets: Ticket[]): TicketRow[] {
     type: t.type,
     status: t.status.value,
     backlog: t.backlog,
+    pinned: t.pinned,
   }))
 }

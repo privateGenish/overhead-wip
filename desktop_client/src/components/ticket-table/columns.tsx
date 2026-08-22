@@ -1,11 +1,26 @@
 import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { PinButton } from '@/components/PinButton'
+import { getTicketStore } from '@/lib/ticketStore'
 import { type TicketRow } from './schema'
 import { DataTableColumnHeader } from './data-table-column-header'
 import { DataTableRowActions } from './data-table-row-actions'
 
 export const columns: ColumnDef<TicketRow>[] = [
+  {
+    id: 'pin',
+    // Looked up live rather than read off the row — pinning needs the actual
+    // Ticket instance (setPinned, the store's cap check), not the row's
+    // plain snapshot of it.
+    cell: ({ row }) => {
+      const ticket = getTicketStore().getByUuid(row.original.uuid)
+      if (!ticket) return null
+      return <PinButton ticket={ticket} variant="icon" />
+    },
+    enableSorting: false,
+    enableHiding: false,
+  },
   {
     id: 'select',
     header: ({ table }) => (

@@ -14,6 +14,9 @@ import { runTicketSql } from '../ipc/ticketAPI'
 import { notifyTicketUpdated } from '../ipc/notify'
 import { getActiveProject } from '../project/projectManager'
 
+/** The bench holds at most this many tickets — see docs/SCHEMA-CHANGES.md. */
+export const MAX_BENCH_TICKETS = 4
+
 const ticketTypeSchema = z.enum(['Explore', 'Feature', 'Execute'])
 type TicketType = z.infer<typeof ticketTypeSchema>
 
@@ -122,9 +125,11 @@ const createSchema = z.object({
   status: z.string().min(1).optional(),
   description: z.string().default(''),
   backlog: z.boolean().default(false),
-  pinned: z.boolean().default(false),
 })
 
+// `pinned` is deliberately absent here — it has its own bridge methods
+// (pinTicket/unpinTicket) that enforce the 4-slot bench cap. A free-form
+// patch would let a caller pin straight past it.
 const updateSchema = z.object({
   uuid: z.string().min(1),
   patch: z.object({
@@ -132,7 +137,6 @@ const updateSchema = z.object({
     status: z.string().min(1).optional(),
     description: z.string().optional(),
     backlog: z.boolean().optional(),
-    pinned: z.boolean().optional(),
     archived: z.boolean().optional(),
   }),
 })
@@ -151,7 +155,7 @@ export function createTicket(input: unknown): BridgeTicket {
     type: data.type,
     status: data.status ?? INITIAL_STATUS[data.type],
     backlog: data.backlog,
-    pinned: data.pinned,
+    pinned: false,
     description: data.description,
     archived: false,
     created_at: now,
@@ -187,4 +191,82 @@ export function deleteTicket(input: unknown): { uuid: string } {
   runTicketSql('DELETE FROM tickets WHERE uuid = ?', [uuid])
   notifyTicketUpdated(uuid)
   return { uuid }
+}
+
+interface BenchSlotRow {
+  ticket_uuid: string
+  slot: number
+}
+
+/** Current bench, ordered by slot. */
+function benchSlots(): BenchSlotRow[] {
+  return runSql('SELECT ticket_uuid, slot FROM bench_slots ORDER BY slot', []) as BenchSlotRow[]
+}
+
+/** Lowest slot not currently occupied. Assumes the caller already checked room exists. */
+function nextFreeSlot(taken: Set<number>): number {
+  let slot = 0
+  while (taken.has(slot)) slot++
+  return slot
+}
+
+/**
+ * Pins a ticket onto the bench. Idempotent if already pinned.
+ *
+ * Throws when the bench is full — the cap is enforced here, not by the
+ * `pinned` boolean, which nothing else in this file lets a caller set
+ * directly any more. The error names the current bench so a caller (a
+ * person or an agent) can decide what to swap out instead of retrying blind.
+ *
+ * Not wrapped in `transact()`: `writeTicket` already opens one internally
+ * (via `syncMentions`), and this module's `transact` doesn't nest. Nothing
+ * here awaits, so the two statements run back-to-back with no interleaving
+ * possible in this single-threaded process — the same guarantee a SQL
+ * transaction would give, without needing one.
+ */
+export function pinTicket(input: unknown): BridgeTicket {
+  const { uuid } = uuidSchema.parse(input)
+  const row = readRow(uuid)
+  if (!row) throw new Error(`bridge: ticket "${uuid}" not found.`)
+  if (row.pinned === 1) return rowToTicket(row)
+
+  const slots = benchSlots()
+  if (slots.length >= MAX_BENCH_TICKETS) {
+    const benched = slots
+      .map((s) => readRow(s.ticket_uuid))
+      .filter((r): r is TicketRow => r !== null)
+      .map((r) => `${r.id} ${r.title}`)
+      .join('; ')
+    throw new Error(
+      `bridge: the bench is full (${MAX_BENCH_TICKETS}/${MAX_BENCH_TICKETS}) — ${benched}. ` +
+      `Unpin one before pinning another.`,
+    )
+  }
+  runSql('INSERT INTO bench_slots (ticket_uuid, slot) VALUES (?, ?)', [
+    uuid, nextFreeSlot(new Set(slots.map((s) => s.slot))),
+  ])
+  const updated = { ...rowToTicket(row), pinned: true, updated_at: Date.now() }
+  writeTicket(updated)
+  return updated
+}
+
+/** Unpins a ticket, freeing its slot. Idempotent if not pinned. See {@link pinTicket} on transactions. */
+export function unpinTicket(input: unknown): BridgeTicket {
+  const { uuid } = uuidSchema.parse(input)
+  const row = readRow(uuid)
+  if (!row) throw new Error(`bridge: ticket "${uuid}" not found.`)
+  if (row.pinned === 0) return rowToTicket(row)
+
+  runSql('DELETE FROM bench_slots WHERE ticket_uuid = ?', [uuid])
+  const updated = { ...rowToTicket(row), pinned: false, updated_at: Date.now() }
+  writeTicket(updated)
+  return updated
+}
+
+/** The bench, ordered by slot — tickets in full, not just uuids. */
+export function listBench(): BridgeTicket[] {
+  return benchSlots()
+    .map((s) => readRow(s.ticket_uuid))
+    .filter((r): r is TicketRow => r !== null)
+    .map(rowToTicket)
 }

@@ -14,7 +14,9 @@
 import { authorize, throttle, type BridgeContext } from './gate'
 import { getProjectContext } from './context'
 import { getActiveProject } from '../project/projectManager'
-import { createTicket, getTicket, listTickets, updateTicket, deleteTicket } from './tickets'
+import {
+  createTicket, getTicket, listTickets, updateTicket, deleteTicket, pinTicket, unpinTicket,
+} from './tickets'
 import { relate, blockBy, unrelate, listRelations } from './relations'
 import {
   listViews, createView, renameView, deleteView,
@@ -30,6 +32,8 @@ const methods = {
   listTickets,
   updateTicket,
   deleteTicket,
+  pinTicket,
+  unpinTicket,
   relate,
   blockBy,
   unrelate,

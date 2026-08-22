@@ -28,14 +28,14 @@ import {
 } from '@/lib/route'
 import type { Project } from '@/types/electron'
 
-const PAGE_VIEWS: Record<Page, React.ReactNode> = {
-  home: <Home />,
+// 'home' and 'graph' are built per-render below — both need callbacks from
+// the shell (open a ticket, jump to Notes) that a static element can't carry.
+const PAGE_VIEWS: Record<Exclude<Page, 'home' | 'graph'>, React.ReactNode> = {
   product: <Product />,
   explore: <Explore />,
   execute: <Execute />,
   backlog: <Backlog />,
   all: <All />,
-  graph: <Graph />,
   notes: <Notes />,
 }
 
@@ -172,9 +172,12 @@ function AppShell({
 function renderRoute(route: Route, onRoute: (route: Route) => void): React.ReactNode {
   const openTicket = (uuid: string) => onRoute({ kind: 'ticket', uuid })
   switch (route.kind) {
-    case 'page':   return route.page === 'graph'
-      ? <Graph onOpenTicket={openTicket} />
-      : PAGE_VIEWS[route.page]
+    case 'page':
+      if (route.page === 'graph') return <Graph onOpenTicket={openTicket} />
+      if (route.page === 'home') {
+        return <Home onOpenTicket={openTicket} onOpenNotes={() => onRoute({ kind: 'page', page: 'notes' })} />
+      }
+      return PAGE_VIEWS[route.page]
     case 'ticket': return <TicketView key={route.uuid} initialTicketUuid={route.uuid} />
     case 'view':   return <Graph key={route.viewUuid} initialViewUuid={route.viewUuid} onOpenTicket={openTicket} />
     case 'overlay': return null // handled above — overlays own the whole frame
