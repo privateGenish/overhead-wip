@@ -8,8 +8,9 @@ vi.mock('electron', () => ({
 }))
 
 import { initSqlite, __resetSqliteForTests } from '../db/sqlite'
-import { dispatchBridge } from './index'
+import { dispatchBridge, dispatchBridgeExternal, BriefingRequiredError } from './index'
 import { __resetThrottleForTests } from './gate'
+import { __resetBriefingForTests } from './briefing'
 import type { BridgeTicket } from './tickets'
 import type { TicketRelation } from '../../src/types/electron'
 
@@ -334,5 +335,77 @@ describe('bridge — proposeTicket', () => {
     expect(() => dispatchBridge('approveTicket', {})).toThrow('unknown method')
     expect(() => dispatchBridge('rejectTicket', {})).toThrow('unknown method')
     expect(() => dispatchBridge('listPendingTickets', {})).toThrow('unknown method')
+  })
+})
+
+describe('bridge — briefing', () => {
+  beforeEach(() => {
+    __resetSqliteForTests()
+    initSqlite(':memory:')
+    __resetBriefingForTests()
+  })
+  afterEach(() => {
+    __resetSqliteForTests()
+    __resetBriefingForTests()
+  })
+
+  it('any call with no ctx (the default across this whole file) never triggers a briefing gate', () => {
+    // Regression guard: ensureBriefed only ever applies to external callers
+    // that set ctx.caller. Every other describe block in this file calls
+    // dispatchBridge with no ctx at all and must keep working unchanged.
+    for (let i = 0; i < 30; i++) {
+      expect(() => dispatchBridge('createTicket', { title: `t${i}`, type: 'Execute' })).not.toThrow()
+    }
+  })
+
+  it('a fresh external caller is rejected via dispatchBridge, carrying guide + token', () => {
+    try {
+      dispatchBridge('createTicket', { title: 'a', type: 'Execute' }, { caller: 'http' })
+      throw new Error('expected a BriefingRequiredError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(BriefingRequiredError)
+      const briefErr = err as BriefingRequiredError
+      expect(typeof briefErr.guide).toBe('string')
+      expect(briefErr.token).toBeTruthy()
+    }
+  })
+
+  it('dispatchBridgeExternal returns a bare {result} once briefed, with no refresh due', () => {
+    let token: string
+    try {
+      dispatchBridgeExternal('createTicket', { title: 'a', type: 'Execute' }, { caller: 'http' })
+      throw new Error('expected a BriefingRequiredError')
+    } catch (err) {
+      if (!(err instanceof BriefingRequiredError)) throw err
+      token = err.token
+    }
+
+    const res = dispatchBridgeExternal('createTicket', { title: 'small', type: 'Execute' }, {
+      caller: 'http', briefToken: token,
+    })
+    expect((res.result as BridgeTicket).title).toBe('small')
+    expect(res.guide).toBeUndefined()
+    expect(res.token).toBeUndefined()
+  })
+
+  it('dispatchBridgeExternal rides a guide+token refresh on a success response once the burst crosses threshold', () => {
+    let token: string
+    try {
+      dispatchBridgeExternal('createTicket', { title: 'a', type: 'Execute' }, { caller: 'http' })
+      throw new Error('expected a BriefingRequiredError')
+    } catch (err) {
+      if (!(err instanceof BriefingRequiredError)) throw err
+      token = err.token
+    }
+
+    const bigWrite = { title: 'x'.repeat(50), type: 'Execute', description: 'y'.repeat(200) }
+    let refreshed: { guide?: string; token?: string } | undefined
+    for (let i = 0; i < 20 && !refreshed?.guide; i++) {
+      const res = dispatchBridgeExternal('createTicket', bigWrite, { caller: 'http', briefToken: token })
+      if (res.token) token = res.token // keep using the latest token, same as a real caller would
+      if (res.guide) refreshed = res
+    }
+    expect(refreshed?.guide).toBeTruthy()
+    expect(refreshed?.token).toBeTruthy()
   })
 })

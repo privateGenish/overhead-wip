@@ -5,22 +5,50 @@
  * The CLI connects, sends one newline-terminated JSON request, receives one
  * newline-terminated JSON response, then disconnects.
  *
- * No token is required — the socket is owned by the current user (mode 0o600),
- * so filesystem permissions serve as the auth boundary.
+ * No auth token is required — the socket is owned by the current user (mode
+ * 0o600), so filesystem permissions serve as the auth boundary. A separate,
+ * unrelated "brief token" (see `bridge/briefing.ts`) proves the caller has
+ * seen the current agent guide; it travels in the same request/response.
  *
  * Protocol:
- *   → { "method": "createTicket", "args": { ... } }\n
- *   ← { "result": ... }\n          on success
- *   ← { "error": "..." }\n         on failure
+ *   → { "method": "createTicket", "args": { ... }, "token"?: "<brief-token>" }\n
+ *   ← { "result": ..., "guide"?: "...", "token"?: "<brief-token>" }\n   on success
+ *   ← { "error": "..." }\n                                             on failure
+ *   ← { "error": "...", "guide": "...", "token": "<brief-token>" }\n   unbriefed caller
  */
 
 import { createServer, type Server } from 'node:net'
 import { unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { dispatchBridge, activeProjectStamp } from '../bridge'
+import { dispatchBridgeExternal, activeProjectStamp, BriefingRequiredError } from '../bridge'
 
 let server: Server | null = null
 let socketPath: string | null = null
+
+/**
+ * The dispatch-and-serialize step, pulled out as a pure function so the
+ * response-shape logic (guide/token injection) is unit-testable without a
+ * real socket.
+ */
+export function handleInvoke(req: { method: string; args?: unknown; token?: string }): string {
+  try {
+    const { result, guide, token } = dispatchBridgeExternal(req.method, req.args ?? null, {
+      caller: 'unix',
+      briefToken: req.token,
+    })
+    return JSON.stringify({
+      result,
+      project: activeProjectStamp(),
+      ...(guide && { guide }),
+      ...(token && { token }),
+    })
+  } catch (err) {
+    if (err instanceof BriefingRequiredError) {
+      return JSON.stringify({ error: err.message, guide: err.guide, token: err.token })
+    }
+    return JSON.stringify({ error: (err as Error).message })
+  }
+}
 
 export function startUnixServer(userData: string): void {
   socketPath = join(userData, 'bridge.sock')
@@ -44,9 +72,8 @@ export function startUnixServer(userData: string): void {
 
       let response: string
       try {
-        const req = JSON.parse(line) as { method: string; args?: unknown }
-        const result = dispatchBridge(req.method, req.args ?? null, { caller: 'unix' })
-        response = JSON.stringify({ result, project: activeProjectStamp() })
+        const req = JSON.parse(line) as { method: string; args?: unknown; token?: string }
+        response = handleInvoke(req)
       } catch (err) {
         response = JSON.stringify({ error: (err as Error).message })
       }

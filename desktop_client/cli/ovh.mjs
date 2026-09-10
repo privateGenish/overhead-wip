@@ -37,7 +37,8 @@
  */
 
 import { createConnection } from 'node:net'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,40 @@ const DEFAULT_SOCKET = join(
   'desktop_client',
   'bridge.sock',
 )
+
+// The CLI is a fresh process per invocation, so the "brief token" (proof this
+// caller has seen the current agent guide — see electron/bridge/briefing.ts)
+// is cached on disk between runs, the same way electron/transports/token.ts
+// caches the HTTP auth token, just as a sibling file.
+const TOKEN_CACHE = join(
+  homedir(),
+  'Library',
+  'Application Support',
+  'desktop_client',
+  'context-token',
+)
+
+function readCachedToken() {
+  try {
+    return readFileSync(TOKEN_CACHE, 'utf8').trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function cacheToken(token) {
+  try {
+    mkdirSync(dirname(TOKEN_CACHE), { recursive: true })
+    writeFileSync(TOKEN_CACHE, token, { mode: 0o600 })
+  } catch {
+    // Best effort — a failed cache write just means the next invocation
+    // gets re-briefed, which is harmless.
+  }
+}
+
+function printGuide(guide) {
+  process.stderr.write(`\n--- Overhead guide ---\n${guide}\n----------------------\n`)
+}
 
 // ---------------------------------------------------------------------------
 // Arg parsing helpers
@@ -98,7 +133,7 @@ function invoke(socketPath, method, args) {
     socket.setEncoding('utf8')
 
     socket.on('connect', () => {
-      socket.write(JSON.stringify({ method, args: args ?? null }) + '\n')
+      socket.write(JSON.stringify({ method, args: args ?? null, token: readCachedToken() }) + '\n')
     })
 
     socket.on('data', (chunk) => {
@@ -107,6 +142,8 @@ function invoke(socketPath, method, args) {
       if (nl === -1) return
       try {
         const msg = JSON.parse(buf.slice(0, nl))
+        if (msg.token) cacheToken(msg.token)
+        if (msg.guide) printGuide(msg.guide)
         if ('error' in msg) reject(new Error(msg.error))
         else resolve(msg.result)
       } catch {

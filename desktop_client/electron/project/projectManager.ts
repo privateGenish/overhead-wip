@@ -28,7 +28,7 @@ import {
   clearActiveProjectUuid,
   type ProjectRow,
 } from '../db/globalDb'
-import { closeVault, initVault } from '../vault/vaultManager'
+import { closeVault, initVault, writeAgentGuide } from '../vault/vaultManager'
 import { initVaultWatcher, stopVaultWatcher } from '../vault/vaultWatcher'
 import { flushHistory } from '../ipc/ticketAPI'
 
@@ -87,6 +87,7 @@ export async function openProject(uuid: string): Promise<ProjectRow> {
   // existed, whose target exists now.
   rebuildAllMentions()
   initVault(vaultDir)
+  writeAgentGuide(vaultDir)
   // Awaited: the watcher releases a native handle on close, and starting the
   // next one before that lands can take the new event stream down with it.
   await initVaultWatcher(vaultDir, notifyVaultTicket)

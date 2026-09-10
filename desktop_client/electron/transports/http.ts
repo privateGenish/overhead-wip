@@ -9,15 +9,20 @@
  *   POST /invoke
  *   Content-Type: application/json
  *   Authorization: Bearer <token>
- *   Body: { "method": "createTicket", "args": { ... } }
+ *   Body: { "method": "createTicket", "args": { ... }, "token"?: "<brief-token>" }
  *
- *   200 { "result": ... }
+ *   200 { "result": ..., "guide"?: "...", "token"?: "<brief-token>" }
  *   400 { "error": "..." }   — bad request / method error
+ *   400 { "error": "...", "guide": "...", "token": "<brief-token>" } — unbriefed caller
  *   401 { "error": "Unauthorized" }
+ *
+ * The `token` field above is a separate concept from the `Authorization`
+ * bearer token: it proves the caller has seen the current agent guide (see
+ * `bridge/briefing.ts`), not that it's allowed to call the bridge at all.
  */
 
 import { createServer, type Server } from 'node:http'
-import { dispatchBridge, activeProjectStamp } from '../bridge'
+import { dispatchBridgeExternal, activeProjectStamp, BriefingRequiredError } from '../bridge'
 import { validateToken } from './token'
 
 const PORT = 49152  // first ephemeral port — avoids clashing with common dev servers
@@ -41,6 +46,36 @@ function authenticated(header: string | undefined): boolean {
   return validateToken(header.slice('Bearer '.length).trim())
 }
 
+/**
+ * The dispatch-and-serialize step of `POST /invoke`, pulled out as a pure
+ * function so the response-shape logic (guide/token injection on both the
+ * success and unbriefed-caller paths) is unit-testable without a real
+ * HTTP server.
+ */
+export function handleInvoke(body: { method: string; args?: unknown; token?: string })
+  : { status: 200 | 400; body: Record<string, unknown> } {
+  try {
+    const { result, guide, token } = dispatchBridgeExternal(body.method, body.args ?? null, {
+      caller: 'http',
+      briefToken: body.token,
+    })
+    return {
+      status: 200,
+      body: {
+        result,
+        project: activeProjectStamp(),
+        ...(guide && { guide }),
+        ...(token && { token }),
+      },
+    }
+  } catch (err) {
+    if (err instanceof BriefingRequiredError) {
+      return { status: 400, body: { error: err.message, guide: err.guide, token: err.token } }
+    }
+    return { status: 400, body: { error: (err as Error).message } }
+  }
+}
+
 export function startHttpServer(): void {
   server = createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json')
@@ -60,18 +95,17 @@ export function startHttpServer(): void {
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
     req.on('end', () => {
+      let body: { method: string; args?: unknown; token?: string }
       try {
-        const body = JSON.parse(Buffer.concat(chunks).toString()) as {
-          method: string
-          args?: unknown
-        }
-        // caller: 'http' is what makes the gate's HTTP branch live — it was
-        // never set before, so that branch was unreachable code.
-        const result = dispatchBridge(body.method, body.args ?? null, { caller: 'http' })
-        res.writeHead(200).end(json({ result, project: activeProjectStamp() }))
+        body = JSON.parse(Buffer.concat(chunks).toString())
       } catch (err) {
         res.writeHead(400).end(json({ error: (err as Error).message }))
+        return
       }
+      // caller: 'http' is what makes the gate's HTTP branch live — it was
+      // never set before, so that branch was unreachable code.
+      const { status, body: responseBody } = handleInvoke(body)
+      res.writeHead(status).end(json(responseBody))
     })
   })
 

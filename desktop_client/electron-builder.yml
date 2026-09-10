@@ -19,3 +19,4 @@ directories:
 files:
   - dist/**/*
   - dist-electron/**/*
+  - shared/**/*

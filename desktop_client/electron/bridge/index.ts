@@ -12,6 +12,7 @@
  */
 
 import { authorize, throttle, type BridgeContext } from './gate'
+import { ensureBriefed, noteBurst, BriefingRequiredError } from './briefing'
 import { getProjectContext } from './context'
 import { getActiveProject } from '../project/projectManager'
 import {
@@ -68,8 +69,28 @@ export function dispatchBridge(method: string, args: unknown, ctx: BridgeContext
   if (!fn) throw new Error(`bridge: unknown method "${method}".`)
   authorize(method, ctx)
   throttle(method, ctx)
+  ensureBriefed(method, ctx)
   return fn(args)
 }
+
+/**
+ * The entry point external transports call, instead of `dispatchBridge`
+ * directly. `dispatchBridge`'s own return type stays a plain `unknown` so
+ * every existing (and future) no-`ctx` internal caller is unaffected; the
+ * `guide`/`token` fields a burst refresh can carry live only on this wrapper,
+ * which only ever runs for callers that set `ctx.caller`.
+ */
+export function dispatchBridgeExternal(
+  method: string,
+  args: unknown,
+  ctx: BridgeContext,
+): { result: unknown; guide?: string; token?: string } {
+  const result = dispatchBridge(method, args, ctx) // throws BriefingRequiredError as before
+  const brief = noteBurst(method, args, ctx) // only runs on success; never throws
+  return { result, ...(brief ?? {}) }
+}
+
+export { BriefingRequiredError }
 
 /**
  * Which project the bridge is currently acting on.

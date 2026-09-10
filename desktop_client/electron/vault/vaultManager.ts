@@ -32,6 +32,29 @@ export function initVault(dir: string): void {
   rebuildNoteIndex()
 }
 
+const AGENT_GUIDE_FILENAME = 'OVERHEAD.md'
+
+/**
+ * Mirrors the agent guide into the vault, verbatim, once per project open.
+ *
+ * This reaches an audience the bridge's briefing gate structurally cannot: a
+ * coding agent editing files in the project directory without ever calling
+ * the bridge, which picks up OVERHEAD.md the same way it would a CLAUDE.md.
+ *
+ * Carries no frontmatter (it mirrors the source file as-is), so `rebuildIndex`
+ * — which only recognises a `uuid:` line — never matches it; no indexing
+ * changes are needed for this to be safe to write alongside ticket files.
+ */
+export function writeAgentGuide(dir: string): void {
+  const src = path.join(process.env.APP_ROOT ?? '', 'shared', 'agent-guide.md')
+  try {
+    const content = fs.readFileSync(src, 'utf8')
+    fs.writeFileSync(path.join(dir, AGENT_GUIDE_FILENAME), content, 'utf8')
+  } catch (err) {
+    console.warn('[vault] could not write OVERHEAD.md — agent-guide.md missing or unreadable:', err)
+  }
+}
+
 export function getVaultDir(): string {
   return vaultDir
 }

@@ -38,6 +38,7 @@ electron/
   bridge/
     index.ts       dispatchBridge() + the method registry (the public surface)
     gate.ts        authorize() + throttle() — cross-cutting, runs before every method
+    briefing.ts    context-token gate + burst-decay drift detection (see "Briefing" below)
     tickets.ts     ticket methods
     relations.ts   relation methods
     views.ts       graph view / node / edge methods
@@ -60,11 +61,15 @@ mcp/
 ```
 POST http://127.0.0.1:49152/invoke
 Content-Type: application/json
-Body: { "method": "createTicket", "args": { ... } }
+Body: { "method": "createTicket", "args": { ... }, "token"?: "<brief-token>" }
 
-200 { "result": ... }
+200 { "result": ..., "guide"?: "...", "token"?: "<brief-token>" }
 400 { "error": "..." }
+400 { "error": "...", "guide": "...", "token": "<brief-token>" }   — unbriefed caller
 ```
+
+The `token` field here is unrelated to the `Authorization` bearer token below —
+see "Briefing" further down.
 
 Binds to `127.0.0.1` only. `EADDRINUSE` is tolerated (a stale dev instance
 holding the port just disables HTTP for the new process).
@@ -75,9 +80,10 @@ Socket at `<userData>/bridge.sock`. One newline-terminated JSON request per
 connection, one newline-terminated JSON response back:
 
 ```
-→ { "method": "createTicket", "args": { ... } }\n
-← { "result": ... }\n          (success)
-← { "error": "..." }\n         (failure)
+→ { "method": "createTicket", "args": { ... }, "token"?: "<brief-token>" }\n
+← { "result": ..., "guide"?: "...", "token"?: "<brief-token>" }\n   (success)
+← { "error": "..." }\n                                             (failure)
+← { "error": "...", "guide": "...", "token": "<brief-token>" }\n   (unbriefed caller)
 ```
 
 A stale socket from a previous run is unlinked on startup. The socket is created
@@ -112,6 +118,36 @@ control — the token and the socket's permissions are that. It exists because a
 runaway agent retry loop would otherwise issue thousands of writes a second,
 and each one fans out into a synchronous SQL write plus a whole-file vault
 write on the main process's only thread.
+
+### Briefing (`bridge/briefing.ts`)
+
+External callers (HTTP, unix) must prove they have seen Overhead's agent
+guide — the three ticket types, when to use each, what the app deliberately
+omits, how relations express structure — before a call succeeds. A caller
+with no token, or a stale one, gets rejected, and the rejection itself
+carries the guide text and a fresh token: failing *is* the briefing, no
+separate round trip. Internal callers (no `ctx.caller`, e.g. this codebase's
+own tests) are never gated — `ensureBriefed` no-ops unless the caller is set.
+
+Once briefed, calls succeed normally: the brief token is not a capability
+grant, just proof of having seen the guide. But a **burst-decay drift
+detector** rides along on every write: an unbroken run of substantial,
+agent-authored writes (title/description text, not structural calls like
+`relate` or `pinTicket`) accumulates a weight that grows exponentially with
+how deep into the run it is. Crossing a threshold rides a guide refresh on
+an otherwise-successful response — never a block, never a diagnosis of what
+drifted, just the plain guide resent. An idle gap between calls ends the
+run; the accumulated weight itself only resets by crossing the threshold, so
+refreshes come faster the longer an unbroken run goes on. This is a
+deliberate, accepted soft cost — an agent that ignores the guide and keeps
+batching writes pays an ever-cheaper-to-trigger reminder, not a rejected
+call.
+
+`shared/agent-guide.md` is the single source of the guide text — used
+verbatim both here and as the `vault/OVERHEAD.md` mirror written into every
+project on open (see `vault/vaultManager.ts`'s `writeAgentGuide`), which
+reaches an audience this gate structurally cannot: a coding agent editing
+vault files directly, without ever calling the bridge.
 
 ### Which project a call acts on
 

@@ -36,13 +36,19 @@ const SOCKET = process.env.OVH_SOCKET ?? join(
   homedir(), 'Library', 'Application Support', 'desktop_client', 'bridge.sock',
 )
 
+// The "brief token" proves this process has seen the current agent guide
+// (see electron/bridge/briefing.ts). It lives for the life of this MCP
+// server process — a fresh host session means a fresh process means a fresh
+// briefing, which is the correct behavior, not something to work around.
+let currentBriefToken
+
 function invoke(method, args) {
   return new Promise((resolve, reject) => {
     const socket = createConnection(SOCKET)
     let buf = ''
     socket.setEncoding('utf8')
     socket.on('connect', () => {
-      socket.write(JSON.stringify({ method, args: args ?? null }) + '\n')
+      socket.write(JSON.stringify({ method, args: args ?? null, token: currentBriefToken }) + '\n')
     })
     socket.on('data', (chunk) => {
       buf += chunk
@@ -50,8 +56,14 @@ function invoke(method, args) {
       if (nl === -1) return
       try {
         const msg = JSON.parse(buf.slice(0, nl))
-        if ('error' in msg) reject(new Error(msg.error))
-        else resolve(msg.result)
+        if (msg.token) currentBriefToken = msg.token
+        if ('error' in msg) {
+          const err = new Error(msg.error)
+          if (msg.guide) err.guide = msg.guide
+          reject(err)
+        } else {
+          resolve({ result: msg.result, guide: msg.guide })
+        }
       } catch {
         reject(new Error('Malformed response from bridge'))
       }
@@ -235,10 +247,14 @@ async function handle(req) {
         return
       }
       try {
-        const result = await invoke(name, args)
-        reply(id, { content: [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }] })
+        const { result, guide } = await invoke(name, args)
+        const content = [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }]
+        if (guide) content.push({ type: 'text', text: `\n---\nOverhead guide:\n${guide}` })
+        reply(id, { content })
       } catch (err) {
-        reply(id, { isError: true, content: [{ type: 'text', text: `error: ${err.message}` }] })
+        const content = [{ type: 'text', text: `error: ${err.message}` }]
+        if (err.guide) content.push({ type: 'text', text: `\n---\nOverhead guide:\n${err.guide}` })
+        reply(id, { isError: true, content })
       }
       return
     }

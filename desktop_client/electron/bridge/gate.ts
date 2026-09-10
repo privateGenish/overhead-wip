@@ -15,6 +15,9 @@ export interface BridgeContext {
   caller?: string
   /** Pre-validated auth token, extracted by the transport layer. */
   token?: string
+  /** The briefing token the caller last received, if any. Proves it has seen
+   *  the agent guide. Unrelated to `token` above — see `bridge/briefing.ts`. */
+  briefToken?: string
 }
 
 /** Authorizes a method call. HTTP callers must supply a valid session token. */
