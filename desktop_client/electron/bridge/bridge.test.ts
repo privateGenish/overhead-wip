@@ -9,6 +9,7 @@ vi.mock('electron', () => ({
 
 import { initSqlite, __resetSqliteForTests } from '../db/sqlite'
 import { dispatchBridge } from './index'
+import { __resetThrottleForTests } from './gate'
 import type { BridgeTicket } from './tickets'
 import type { TicketRelation } from '../../src/types/electron'
 
@@ -281,5 +282,57 @@ describe('bridge — dispatch', () => {
 
   it('rejects an unknown method', () => {
     expect(() => dispatchBridge('dropEverything', {})).toThrow('unknown method')
+  })
+})
+
+describe('bridge — proposeTicket', () => {
+  beforeEach(() => {
+    __resetSqliteForTests()
+    initSqlite(':memory:')
+    __resetThrottleForTests() // this file's earlier describes share the throttle's call log
+  })
+  afterEach(() => __resetSqliteForTests())
+
+  const propose = (input: unknown) => dispatchBridge('proposeTicket', input) as {
+    uuid: string
+    title: string
+    type: string
+    description: string
+    created_at: number
+  }
+
+  it('inserts a draft and returns it, with no id minted', () => {
+    const draft = propose({ title: 'Investigate slow query', type: 'Explore' })
+    expect(draft.uuid).toBeTruthy()
+    expect(draft.title).toBe('Investigate slow query')
+    expect(draft.type).toBe('Explore')
+    expect(draft).not.toHaveProperty('id')
+    expect(draft).not.toHaveProperty('status')
+  })
+
+  it('defaults description to an empty string', () => {
+    expect(propose({ title: 'a', type: 'Execute' }).description).toBe('')
+  })
+
+  it('rejects an invalid type', () => {
+    expect(() => propose({ title: 'a', type: 'Nope' })).toThrow()
+    expect(() => propose({ title: '', type: 'Execute' })).toThrow()
+  })
+
+  it('never lands in the tickets table', () => {
+    propose({ title: 'a', type: 'Execute' })
+    expect(dispatchBridge('listTickets', undefined)).toHaveLength(0)
+  })
+
+  it('does not touch the id counter', () => {
+    propose({ title: 'a', type: 'Execute' })
+    const t = dispatchBridge('createTicket', { title: 'real one', type: 'Execute' }) as { id: string }
+    expect(t.id).toBe('OVH-001') // still the first ticket ever actually created
+  })
+
+  it('has no approve or reject method on the bridge, on any transport', () => {
+    expect(() => dispatchBridge('approveTicket', {})).toThrow('unknown method')
+    expect(() => dispatchBridge('rejectTicket', {})).toThrow('unknown method')
+    expect(() => dispatchBridge('listPendingTickets', {})).toThrow('unknown method')
   })
 })

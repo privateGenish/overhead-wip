@@ -60,8 +60,10 @@ declare global {
       historyFlush: (ticketUuid: string) => Promise<void>
       relation:     (op: 'add' | 'remove' | 'list' | 'listAll', payload: RelationPayload) => Promise<unknown>
       graph:        (op: string, payload?: unknown) => Promise<unknown>
+      pending:      (op: 'list' | 'approve' | 'reject' | 'hasAny', payload?: unknown) => Promise<unknown>
       onVaultTicketUpdated?: (callback: (ticketUuid: string) => void) => () => void
       onGraphUpdated?: (callback: () => void) => () => void
+      onPendingUpdated?: (callback: () => void) => () => void
     }
   }
 }

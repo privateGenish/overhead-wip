@@ -10,6 +10,7 @@
  *
  *   ovh tickets list
  *   ovh tickets create <title> <type>  [--status S] [--description D] [--backlog]
+ *   ovh tickets propose <title> <type>  [--description D]
  *   ovh tickets get <uuid>
  *   ovh tickets update <uuid>  [--title T] [--status S] [--description D] [--backlog] [--archived]
  *   ovh tickets delete <uuid>
@@ -160,6 +161,16 @@ async function main() {
         ...(flags.status      ? { status: flags.status }          : {}),
         ...(flags.description ? { description: flags.description } : {}),
         ...(flags.backlog     ? { backlog: true }                  : {}),
+      })
+
+    } else if (sub === 'propose') {
+      const [title, type] = rest
+      need(title, 'title')
+      need(type, 'type  (Explore | Feature | Execute)')
+      result = await invoke(sock, 'proposeTicket', {
+        title,
+        type,
+        ...(flags.description ? { description: flags.description } : {}),
       })
 
     } else if (sub === 'update') {
@@ -347,10 +358,11 @@ Usage: ovh tickets <command>
 
 Commands:
   list
-  get    <uuid>
-  create <title> <type>  [--status S] [--description D] [--backlog]
-  update <uuid>          [--title T] [--status S] [--description D] [--backlog] [--archived]
-  delete <uuid>
+  get     <uuid>
+  create  <title> <type>  [--status S] [--description D] [--backlog]
+  propose <title> <type>  [--description D]
+  update  <uuid>          [--title T] [--status S] [--description D] [--backlog] [--archived]
+  delete  <uuid>
 
 Types: Explore | Feature | Execute
 `.trimStart())

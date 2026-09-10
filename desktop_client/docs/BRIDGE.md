@@ -160,11 +160,20 @@ adding them must not break callers.
 | `createTicket` | `{ title, type, status?, description?, backlog? }` | `Ticket` |
 | `updateTicket` | `{ uuid, patch: { title?, status?, description?, backlog?, archived? } }` | `Ticket` |
 | `deleteTicket` | `{ uuid }` | `{ uuid }` |
+| `proposeTicket` | `{ title, type, description? }` | `PendingTicket` — inserted, not yet a ticket; no id minted |
 
 `type` ∈ `Explore | Feature | Execute`. Status defaults per type
 (Execute→`Draft`, Explore→`Open`, Feature→`Idea`). Ids (`OVH-001`) and uuids are
 minted server-side. Writes route through `runTicketSql` so vault mirroring +
 history snapshots match the renderer's path exactly.
+
+`proposeTicket` inserts a row into `pending_tickets` — a draft, not a ticket.
+**There is no `approve`/`reject`/`getPending`/`listPending` bridge method, on
+any transport, ever.** A human approves or rejects proposals from the app
+itself (Door 1 only); approval promotes the draft through the normal
+`createTicket` path (fresh uuid, minted id, initial status, vault mirror,
+mentions), and rejection just deletes the row. This is a deliberate trust
+boundary, not a missing feature — do not add approve/reject here.
 
 ### Relations (`bridge/relations.ts`)
 

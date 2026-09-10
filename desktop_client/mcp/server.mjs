@@ -108,6 +108,20 @@ const TOOLS = [
     }, ['title', 'type']),
   },
   {
+    name: 'proposeTicket',
+    description:
+      'Propose a ticket draft for human approval — use instead of createTicket when the ticket ' +
+      'originates from your own judgment (the user is dwelling on a question, describing a ' +
+      'capability) rather than an explicit instruction to create one. The draft is not a real ' +
+      'ticket until a human approves it in the app; it has no id and cannot be read, updated, ' +
+      'or deleted through this tool.',
+    inputSchema: schema({
+      title: str('Ticket title'),
+      type: TICKET_TYPE,
+      description: str('Optional markdown description'),
+    }, ['title', 'type']),
+  },
+  {
     name: 'updateTicket',
     description: 'Patch a ticket. Only provided fields change.',
     inputSchema: schema({

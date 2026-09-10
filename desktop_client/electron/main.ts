@@ -14,6 +14,7 @@ import { registerGeneralAPI } from './ipc/generalAPI'
 import { registerAppSettingsAPI } from './ipc/appSettingsAPI'
 import { registerTicketAPI, flushHistory } from './ipc/ticketAPI'
 import { registerNoteAPI } from './ipc/noteAPI'
+import { registerPendingAPI } from './ipc/pendingAPI'
 import { registerHistoryAPI } from './ipc/historyAPI'
 import { registerRelationsAPI } from './ipc/relationsAPI'
 import { registerGraphAPI } from './ipc/graphAPI'
@@ -131,6 +132,7 @@ if (!app.requestSingleInstanceLock()) {
     registerAppSettingsAPI()
     registerTicketAPI()
     registerNoteAPI()
+    registerPendingAPI()
     registerHistoryAPI()
     registerRelationsAPI()
     registerGraphAPI()

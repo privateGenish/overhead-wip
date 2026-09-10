@@ -16,6 +16,7 @@ import { getProjectContext } from './context'
 import { getActiveProject } from '../project/projectManager'
 import {
   createTicket, getTicket, listTickets, updateTicket, deleteTicket, pinTicket, unpinTicket,
+  proposeTicket,
 } from './tickets'
 import { relate, blockBy, unrelate, listRelations } from './relations'
 import {
@@ -34,6 +35,8 @@ const methods = {
   deleteTicket,
   pinTicket,
   unpinTicket,
+  // No approve/reject here, ever — approval is human-only, renderer-only (Door 1).
+  proposeTicket,
   relate,
   blockBy,
   unrelate,

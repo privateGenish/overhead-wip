@@ -66,4 +66,24 @@ describe('Navbar', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Projects' }))
     expect(onSelect).toHaveBeenCalledWith('Projects')
   })
+
+  it('shows no dot on Home when nothing is pending', () => {
+    const { container } = render(<Navbar active="Home" onSelect={() => {}} />)
+    expect(container.querySelector('.bg-destructive')).toBeNull()
+  })
+
+  it('shows a dot on Home when a ticket is pending', () => {
+    const { container } = render(<Navbar active="Home" onSelect={() => {}} hasPendingTickets />)
+    expect(container.querySelector('.bg-destructive')).toBeInTheDocument()
+  })
+
+  it('never puts the dot on any tab other than Home', () => {
+    const { container } = render(<Navbar active="Home" onSelect={() => {}} hasPendingTickets />)
+    const otherTabs = ['Product', 'Explore', 'Execute', 'Backlog', 'All', 'Graph']
+    for (const tab of otherTabs) {
+      const button = screen.getByRole('button', { name: tab })
+      expect(button.querySelector('.bg-destructive')).toBeNull()
+    }
+    expect(container.querySelectorAll('.bg-destructive')).toHaveLength(1)
+  })
 })

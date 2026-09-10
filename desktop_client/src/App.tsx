@@ -16,6 +16,7 @@ import { SearchPalette } from '@/components/SearchPalette'
 import { ChevronLeft, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { initTicketStore } from '@/lib/ticketStore'
+import { pendingClient } from '@/lib/pendingClient'
 import { resolveDeepLink } from '@/lib/deepLinkRouter'
 import { readableError } from '@/lib/ipcError'
 import {
@@ -116,6 +117,24 @@ function AppShell({
     if (route.kind !== 'overlay') covered.current = route
   }, [route])
 
+  // A presence check for the navbar's dot — scoped here (not a module-level
+  // store) so it resets correctly on project switch, same as everything else
+  // AppShell owns. PendingTray on Home does its own independent fetch for the
+  // actual list; both are cheap enough not to share state.
+  const [hasPendingTickets, setHasPendingTickets] = useState(false)
+  useEffect(() => {
+    let alive = true
+    const refetch = () => {
+      void pendingClient.hasAny().then((has) => { if (alive) setHasPendingTickets(has) })
+    }
+    refetch()
+    const unsubscribe = window.db.onPendingUpdated?.(refetch)
+    return () => {
+      alive = false
+      unsubscribe?.()
+    }
+  }, [])
+
   // Search is available from everywhere the project is open, overlays
   // included — choosing a result is a route change, so it leaves the overlay
   // the same way the Back button would.
@@ -151,6 +170,7 @@ function AppShell({
       <Navbar
         active={navLabelForRoute(route)}
         projectName={project.name}
+        hasPendingTickets={hasPendingTickets}
         onSelect={(label) => {
           const next = routeForNavLabel(label)
           if (next) onRoute(next)

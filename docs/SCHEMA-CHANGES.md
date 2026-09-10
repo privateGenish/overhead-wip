@@ -97,3 +97,30 @@ its slot for free.
 
 No age or timestamp column was added anywhere in this round — pin order is
 assigned by which slot is free when you pin, not by when.
+
+---
+
+## 2026-09-10 — Pending tickets
+
+Agents can now propose tickets through the bridge (`proposeTicket`) without
+creating one outright — the team wanted proactive ticket creation encouraged,
+but not fully autonomous. A rejected or never-approved proposal leaves zero
+trace: no id, no vault file, no history.
+
+### New table
+
+| Table | Purpose |
+|---|---|
+| `pending_tickets` | `uuid, title, type, description, created_at`. Explicitly not a ticket — no `id`, no `status`, no `backlog`, no relations. |
+
+Approval is renderer-only (Door 1) and always promotes a pending row through
+the same `createTicket()` path a normal ticket takes — same id-minting, same
+initial-status-per-type, same vault mirror and mentions sync — then deletes
+the pending row. There is no `approve`/`reject` bridge method on any
+transport; only `proposeTicket` (insert-only) is exposed externally. This is
+a deliberate trust boundary: an external caller can suggest a ticket, never
+finalize one.
+
+Rejection is a plain `DELETE FROM pending_tickets WHERE uuid = ?` — no
+confirmation dialog, unlike ticket deletion elsewhere in the app, because
+there is nothing at stake to protect against here by design.

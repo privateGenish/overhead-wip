@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { runSql } from '../db/sqlite'
 import { runTicketSql } from '../ipc/ticketAPI'
-import { notifyTicketUpdated } from '../ipc/notify'
+import { notifyTicketUpdated, notifyPendingUpdated } from '../ipc/notify'
 import { getActiveProject } from '../project/projectManager'
 
 /** The bench holds at most this many tickets — see docs/SCHEMA-CHANGES.md. */
@@ -269,4 +269,45 @@ export function listBench(): BridgeTicket[] {
     .map((s) => readRow(s.ticket_uuid))
     .filter((r): r is TicketRow => r !== null)
     .map(rowToTicket)
+}
+
+// --- Pending-ticket schema/method (agent-facing propose only; approve/reject
+// are renderer-only, never exposed on the bridge — see docs/BRIDGE.md) ---
+
+export interface PendingTicket {
+  uuid: string
+  title: string
+  type: TicketType
+  description: string
+  created_at: number
+}
+
+const proposeSchema = z.object({
+  title: z.string().min(1),
+  type: ticketTypeSchema,
+  description: z.string().default(''),
+})
+
+/**
+ * Inserts an agent-proposed ticket draft. Insert-only — there is no read,
+ * update, approve, or reject method for this table on the bridge, on any
+ * transport. A human acts on it from the renderer (Door 1) or it never
+ * becomes anything. No vault mirror, no mentions sync, no history — this
+ * table has none of that, by design.
+ */
+export function proposeTicket(input: unknown): PendingTicket {
+  const data = proposeSchema.parse(input)
+  const row: PendingTicket = {
+    uuid: randomUUID(),
+    title: data.title,
+    type: data.type,
+    description: data.description,
+    created_at: Date.now(),
+  }
+  runSql(
+    'INSERT INTO pending_tickets (uuid, title, type, description, created_at) VALUES (?, ?, ?, ?, ?)',
+    [row.uuid, row.title, row.type, row.description, row.created_at],
+  )
+  notifyPendingUpdated()
+  return row
 }

@@ -20,3 +20,10 @@ export function notifyGraphUpdated(): void {
     window.webContents.send('graph:updated')
   }
 }
+
+/** Tells all renderer windows a pending-ticket proposal was created, approved, or rejected. */
+export function notifyPendingUpdated(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('pending:updated')
+  }
+}

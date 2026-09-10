@@ -27,6 +27,18 @@ export function initSqlite(file: string): void {
       value TEXT NOT NULL
     );
 
+    -- AI-proposed ticket drafts awaiting human approval. Not a ticket: no id,
+    -- no status, no backlog, no relations. Approval promotes the row through
+    -- the normal createTicket() path and deletes it; rejection just deletes
+    -- it. See docs/SCHEMA-CHANGES.md.
+    CREATE TABLE IF NOT EXISTS pending_tickets (
+      uuid        TEXT PRIMARY KEY,
+      title       TEXT NOT NULL,
+      type        TEXT NOT NULL CHECK(type IN ('Explore', 'Feature', 'Execute')),
+      description TEXT NOT NULL DEFAULT '',
+      created_at  INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS ticket_history (
       ticket_uuid  TEXT    NOT NULL REFERENCES tickets(uuid) ON DELETE CASCADE,
       ts           INTEGER NOT NULL,

@@ -21,9 +21,11 @@ interface NavbarProps {
    * IPC — the fallback covers the frame before that answer arrives.
    */
   projectName?: string
+  /** Whether at least one AI-proposed ticket is awaiting approval. A presence check, not a count. */
+  hasPendingTickets?: boolean
 }
 
-export function Navbar({ active, onSelect, projectName }: NavbarProps) {
+export function Navbar({ active, onSelect, projectName, hasPendingTickets }: NavbarProps) {
   return (
     <div className="flex items-center justify-between px-4 py-2 bg-background">
       {/* Tab groups */}
@@ -44,6 +46,9 @@ export function Navbar({ active, onSelect, projectName }: NavbarProps) {
                 }`}
               >
                 {label}
+                {label === 'Home' && hasPendingTickets && (
+                  <span className="ml-1.5 inline-block size-1.5 rounded-full bg-destructive align-middle" />
+                )}
               </button>
             ))}
           </div>

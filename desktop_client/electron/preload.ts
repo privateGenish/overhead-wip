@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('db', {
   historyFlush: (ticketUuid: string) => ipcRenderer.invoke('db:history:flush', ticketUuid),
   relation: (op: string, payload: unknown) => ipcRenderer.invoke('db:relation', op, payload),
   graph: (op: string, payload?: unknown) => ipcRenderer.invoke('db:graph', op, payload ?? {}),
+  pending: (op: string, payload?: unknown) => ipcRenderer.invoke('db:pending', op, payload ?? {}),
   onVaultTicketUpdated: (callback: (ticketUuid: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, ticketUuid: string) => {
       callback(ticketUuid)
@@ -22,6 +23,13 @@ contextBridge.exposeInMainWorld('db', {
     ipcRenderer.on('graph:updated', listener)
     return () => {
       ipcRenderer.removeListener('graph:updated', listener)
+    }
+  },
+  onPendingUpdated: (callback: () => void) => {
+    const listener = () => { callback() }
+    ipcRenderer.on('pending:updated', listener)
+    return () => {
+      ipcRenderer.removeListener('pending:updated', listener)
     }
   },
 })
